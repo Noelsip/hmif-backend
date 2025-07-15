@@ -1,4 +1,4 @@
-# HMIF App Backend - API Documentation
+# HMIF App Backend API Documentation
 
 ## Base URL
 ```
@@ -6,19 +6,17 @@ http://localhost:3000
 ```
 
 ## Authentication
-API ini menggunakan JWT (JSON Web Token) untuk autentikasi. Setelah login berhasil, sertakan token dalam header:
+The API uses JWT (JSON Web Token) for authentication. Include the token in the Authorization header:
 ```
 Authorization: Bearer <your_jwt_token>
 ```
 
 ---
 
-## API Endpoints
+## Health Check
 
-### 1. Health Check
-
-#### `GET /`
-**Deskripsi:** Endpoint untuk mengecek status API.
+### GET `/`
+Basic health check endpoint.
 
 **Response:**
 ```json
@@ -30,8 +28,8 @@ Authorization: Bearer <your_jwt_token>
 }
 ```
 
-#### `GET /health`
-**Deskripsi:** Health check endpoint untuk monitoring.
+### GET `/health`
+Health check endpoint.
 
 **Response:**
 ```json
@@ -44,17 +42,10 @@ Authorization: Bearer <your_jwt_token>
 
 ---
 
-### 2. Authentication
+## Authentication Routes (`/auth`)
 
-#### `GET /auth/google`
-**Deskripsi:** Memulai proses autentikasi Google OAuth untuk web browser.
-
-**Response:** Redirect ke halaman login Google
-
----
-
-#### `POST /auth/google`
-**Deskripsi:** Login menggunakan Google ID Token (untuk aplikasi mobile/Flutter).
+### POST `/auth/google`
+Login with Google ID token (for Flutter).
 
 **Request Body:**
 ```json
@@ -63,7 +54,7 @@ Authorization: Bearer <your_jwt_token>
 }
 ```
 
-**Response Success:**
+**Response:**
 ```json
 {
   "success": true,
@@ -71,55 +62,24 @@ Authorization: Bearer <your_jwt_token>
   "data": {
     "user": {
       "id": 1,
-      "nim": "11231001",
-      "email": "11231001@student.itk.ac.id",
+      "nim": "11220001",
+      "email": "11220001@student.itk.ac.id",
       "name": "John Doe",
-      "profileImageUrl": "https://example.com/image.jpg"
+      "profileImageUrl": "https://image.url"
     },
-    "token": "jwt_access_token_here"
+    "token": "jwt_token_here"
   }
 }
 ```
 
-**Response Error:**
-```json
-{
-  "success": false,
-  "message": "Only ITK student email is allowed"
-}
-```
+### GET `/auth/google`
+Start Google OAuth authentication (for web).
 
-**Validasi:**
-- Email harus berakhiran `@student.itk.ac.id`
-- NIM harus dimulai dengan "11"
+### GET `/auth/google/callback`
+Google OAuth callback endpoint.
 
----
-
-#### `GET /auth/google/callback`
-**Deskripsi:** Callback URL untuk Google OAuth (web flow).
-
-**Response Success:**
-```json
-{
-  "success": true,
-  "message": "Login successful",
-  "data": {
-    "user": {
-      "id": 1,
-      "nim": "11231001",
-      "email": "11231001@student.itk.ac.id",
-      "name": "John Doe",
-      "profileImageUrl": "https://example.com/image.jpg"
-    },
-    "token": "jwt_access_token_here"
-  }
-}
-```
-
----
-
-#### `GET /auth/failure`
-**Deskripsi:** Endpoint untuk handle kegagalan autentikasi Google.
+### GET `/auth/failure`
+Google OAuth failure endpoint.
 
 **Response:**
 ```json
@@ -129,10 +89,8 @@ Authorization: Bearer <your_jwt_token>
 }
 ```
 
----
-
-#### `POST /auth/logout`
-**Deskripsi:** Logout pengguna (client-side token removal).
+### POST `/auth/logout`
+Logout endpoint.
 
 **Response:**
 ```json
@@ -142,47 +100,31 @@ Authorization: Bearer <your_jwt_token>
 }
 ```
 
----
-
-### 3. User Profile
-
-#### `GET /auth/profile`
-**Deskripsi:** Mendapatkan profil pengguna yang sedang login.
+### GET `/auth/profile`
+Get current user profile (requires authentication).
 
 **Headers:**
 ```
 Authorization: Bearer <jwt_token>
 ```
 
-**Response Success:**
+**Response:**
 ```json
 {
   "success": true,
   "data": {
     "id": 1,
-    "nim": "11231001",
-    "email": "11231001@student.itk.ac.id",
+    "nim": "11220001",
+    "email": "11220001@student.itk.ac.id",
     "name": "John Doe",
-    "profile_image_url": "https://example.com/image.jpg",
+    "profile_image_url": "https://image.url",
     "created_at": "2024-01-01T00:00:00.000Z"
   }
 }
 ```
 
-**Response Error:**
-```json
-{
-  "success": false,
-  "message": "Access token required"
-}
-```
-
----
-
-### 4. Token Management
-
-#### `POST /auth/refresh`
-**Deskripsi:** Refresh JWT access token.
+### POST `/auth/refresh`
+Refresh JWT token.
 
 **Request Body:**
 ```json
@@ -191,83 +133,431 @@ Authorization: Bearer <jwt_token>
 }
 ```
 
-**Response Success:**
+**Response:**
 ```json
 {
   "success": true,
   "data": {
-    "accessToken": "new_jwt_token_here"
+    "accessToken": "new_jwt_token"
   }
 }
 ```
 
-**Response Error:**
-```json
-{
-  "success": false,
-  "message": "Invalid refresh token."
-}
-```
-
----
-
-### 5. User Search
-
-#### `GET /auth/search?nim=<nim>`
-**Deskripsi:** Mencari pengguna berdasarkan NIM.
+### GET `/auth/search`
+Search user by NIM.
 
 **Query Parameters:**
-- `nim` (required): NIM mahasiswa (contoh: 11231001)
-
-**Example Request:**
-```
-GET /auth/search?nim=11231001
-```
-
-**Response Success:**
-```json
-{
-  "success": true,
-  "data": {
-    "id": 1,
-    "nim": "11231001",
-    "email": "11231001@student.itk.ac.id",
-    "name": "John Doe",
-    "profile_image_url": "https://example.com/image.jpg"
-  }
-}
-```
-
-**Response Error:**
-```json
-{
-  "success": false,
-  "message": "User not found Or Database error."
-}
-```
-
-**Validasi:**
-- NIM harus dimulai dengan "11"
-- NIM harus terdiri dari 10-12 digit
-
----
-
-### 6. Test Endpoint
-
-#### `POST /auth/test`
-**Deskripsi:** Endpoint untuk testing POST request dan debugging.
-
-**Request Body:** Any JSON data
+- `nim` (required): Student identification number
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "POST test successful",
-  "receivedData": {
-    "key": "value"
-  },
-  "timestamp": "2024-01-01T00:00:00.000Z"
+  "data": {
+    "id": 1,
+    "nim": "11220001",
+    "email": "11220001@student.itk.ac.id",
+    "name": "John Doe",
+    "profile_image_url": "https://image.url"
+  }
+}
+```
+
+---
+
+## Subject Routes (`/api/subcject`)
+
+### GET `/api/subcject`
+Get all subjects.
+
+**Response:**
+```json
+{
+  "success": true,
+  "subjects": [
+    {
+      "id": 1,
+      "code": "CS101",
+      "name": "Introduction to Computer Science",
+      "description": "Basic concepts of computer science",
+      "credits": 3
+    }
+  ]
+}
+```
+
+### GET `/api/subcject/enrolledsub`
+Get user's enrolled subjects (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "subjects": [
+    {
+      "id": 1,
+      "code": "CS101",
+      "name": "Introduction to Computer Science",
+      "description": "Basic concepts of computer science",
+      "semester": 1,
+      "credits": 3,
+      "enrolled_at": "2024-01-01T00:00:00.000Z",
+      "video_count": 5
+    }
+  ],
+  "totalCredits": 3
+}
+```
+
+### POST `/api/subcject/enroll`
+Enroll user to a subject (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+```json
+{
+  "subjectId": 1
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully enrolled in subject",
+  "data": {
+    "subjectId": 1,
+    "enrolledAt": "2024-01-01T00:00:00.000Z"
+  }
+}
+```
+
+### DELETE `/api/subcject/unenroll/:subjectId`
+Unenroll from a subject (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Successfully unenrolled from subject"
+}
+```
+
+### GET `/api/subcject/:subjectId/videos`
+Get videos for a specific subject (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "videos": [
+    {
+      "id": 1,
+      "title": "Introduction to Programming",
+      "description": "Basic programming concepts",
+      "video_url": "https://video.url",
+      "thumbnail_url": "https://thumbnail.url",
+      "duration": 1800,
+      "order_index": 1
+    }
+  ]
+}
+```
+
+### POST `/api/subcject`
+Create new subject (requires admin authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+```json
+{
+  "code": "CS101",
+  "name": "Introduction to Computer Science",
+  "description": "Basic concepts of computer science",
+  "semester": 1,
+  "credits": 3
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Subject created successfully",
+  "subject": {
+    "id": 1,
+    "code": "CS101",
+    "name": "Introduction to Computer Science",
+    "description": "Basic concepts of computer science",
+    "semester": 1,
+    "credits": 3
+  }
+}
+```
+
+---
+
+## Video Routes (`/api/videos`)
+
+### POST `/api/videos`
+Add video to subject (requires admin authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+```json
+{
+  "subjectId": 1,
+  "title": "Introduction to Programming",
+  "description": "Basic programming concepts",
+  "videoUrl": "https://video.url",
+  "thumbnailUrl": "https://thumbnail.url",
+  "duration": 1800,
+  "orderIndex": 1
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Video added successfully",
+  "data": {
+    "id": 1,
+    "subjectId": 1,
+    "title": "Introduction to Programming",
+    "description": "Basic programming concepts",
+    "videoUrl": "https://video.url",
+    "thumbnailUrl": "https://thumbnail.url",
+    "duration": 1800,
+    "orderIndex": 1
+  }
+}
+```
+
+### GET `/api/videos/:videoId`
+Get video details (requires authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "video": {
+    "id": 1,
+    "subject_name": "Introduction to Computer Science",
+    "subject_code": "CS101"
+  }
+}
+```
+
+### PUT `/api/videos/:videoId`
+Update video (requires admin authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Request Body:**
+```json
+{
+  "title": "Updated Video Title",
+  "description": "Updated description",
+  "videoUrl": "https://updated-video.url",
+  "thumbnailUrl": "https://updated-thumbnail.url",
+  "duration": 2400,
+  "orderIndex": 2,
+  "isActive": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Video updated successfully"
+}
+```
+
+### DELETE `/api/videos/:videoId`
+Delete video (requires admin authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Video deleted successfully"
+}
+```
+
+---
+
+## News Routes (`/api/news`)
+
+### GET `/api/news`
+Get all published news (public access).
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+- `category` (optional): Filter by category
+- `search` (optional): Search in title and excerpt
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "news": [
+      {
+        "id": 1,
+        "title": "News Title",
+        "excerpt": "News excerpt",
+        "image_url": "https://image.url",
+        "category": "general",
+        "published_at": "2024-01-01T00:00:00.000Z",
+        "is_published": true,
+        "create_at": "2024-01-01T00:00:00.000Z",
+        "author_name": "John Doe",
+        "author_email": "john@student.itk.ac.id"
+      }
+    ],
+    "pagination": {
+      "currentPage": 1,
+      "totalPages": 5,
+      "totalNews": 50,
+      "hasNextPage": true,
+      "hasPreviousPage": false
+    }
+  }
+}
+```
+
+### GET `/api/news/:id`
+Get single news by ID (public access).
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": 1,
+    "title": "News Title",
+    "content": "Full news content",
+    "excerpt": "News excerpt",
+    "image_url": "https://image.url",
+    "category": "general",
+    "published_at": "2024-01-01T00:00:00.000Z",
+    "created_at": "2024-01-01T00:00:00.000Z",
+    "updated_at": "2024-01-01T00:00:00.000Z",
+    "author_name": "John Doe",
+    "author_email": "john@student.itk.ac.id"
+  }
+}
+```
+
+### GET `/api/news/admin/all`
+Get all news including unpublished (requires admin authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+```
+
+**Query Parameters:**
+- `page` (optional): Page number (default: 1)
+- `limit` (optional): Items per page (default: 10)
+- `category` (optional): Filter by category
+- `status` (optional): Filter by status ('published' or 'draft')
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": 1,
+      "title": "News Title",
+      "excerpt": "News excerpt",
+      "image_url": "https://image.url",
+      "category": "general",
+      "is_published": true,
+      "published_at": "2024-01-01T00:00:00.000Z",
+      "updated_at": "2024-01-01T00:00:00.000Z",
+      "author_name": "John Doe",
+      "author_email": "john@student.itk.ac.id"
+    }
+  ]
+}
+```
+
+### POST `/api/news`
+Create new news (requires admin authentication).
+
+**Headers:**
+```
+Authorization: Bearer <jwt_token>
+Content-Type: multipart/form-data
+```
+
+**Request Body (Form Data):**
+- `title` (required): News title
+- `content` (required): News content
+- `excerpt` (optional): News excerpt
+- `category` (optional): News category (default: 'general')
+- `isPublished` (optional): Boolean (default: true)
+- `image` (optional): Image file (max 5MB)
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "News created successfully",
+  "data": {
+    "id": 1,
+    "title": "News Title",
+    "content": "News content",
+    "excerpt": "News excerpt",
+    "imageUrl": "https://image.url",
+    "category": "general",
+    "isPublished": true
+  }
 }
 ```
 
@@ -275,176 +565,92 @@ GET /auth/search?nim=11231001
 
 ## Error Responses
 
-### Format Error Response
-Semua error response menggunakan format yang konsisten:
+All endpoints may return error responses in the following format:
 
 ```json
 {
   "success": false,
-  "message": "Error message description",
-  "error": "Detailed error (hanya muncul di development mode)"
+  "message": "Error message",
+  "error": "Detailed error information (development only)"
 }
 ```
 
-### HTTP Status Codes
+### Common HTTP Status Codes:
 - `200` - Success
-- `400` - Bad Request (invalid input)
-- `401` - Unauthorized (token missing/invalid)
-- `403` - Forbidden (insufficient permissions)
-- `404` - Not Found (resource tidak ditemukan)
+- `201` - Created
+- `400` - Bad Request
+- `401` - Unauthorized
+- `403` - Forbidden
+- `404` - Not Found
 - `500` - Internal Server Error
 
 ---
 
-## Rate Limiting
-- **Limit:** 100 requests per IP
-- **Window:** 15 menit
-- **Response saat limit tercapai:**
-```json
-{
-  "success": false,
-  "message": "Too many requests, please try again later."
-}
-```
-
----
-
-## CORS Policy
-**Allowed Origins:**
-- `http://localhost:3000`
-- `http://localhost:8080`
-- `http://10.0.2.2:3000` (Android Emulator)
-- `http://127.0.0.1:3000`
-- `http://10.160.132.88:3000`
-- Origins dari environment variable `ALLOWED_ORIGINS`
-
-**Allowed Methods:** GET, POST, PUT, DELETE, OPTIONS
-
-**Allowed Headers:** Content-Type, Authorization
-
----
-
-## Environment Requirements
-
-**Required Environment Variables:**
-```env
-# Database
-DB_HOST=127.0.0.1
-DB_USER=root
-DB_PASSWORD=
-DB_NAME=hmif_app
-DB_PORT=3306
-
-# JWT
-JWT_SECRET=your_jwt_secret
-JWT_EXPIRES_IN=1h
-
-# Google OAuth
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-
-# Session
-SESSION_SECRET=your_session_secret
-
-# ImageKit (optional untuk upload gambar)
-IMAGEKIT_PUBLIC_KEY=your_public_key
-IMAGEKIT_PRIVATE_KEY=your_private_key
-IMAGEKIT_URL_ENDPOINT=your_endpoint
-
-# Admin (optional)
-ADMIN_EMAILS=admin1@student.itk.ac.id,admin2@student.itk.ac.id
-```
-
----
-
-## Database Schema
+## Database Tables Structure
 
 ### Users Table
-```sql
-CREATE TABLE users (
-  id INT PRIMARY KEY AUTO_INCREMENT,
-  nim VARCHAR(12) UNIQUE NOT NULL,
-  email VARCHAR(255) UNIQUE NOT NULL,
-  name VARCHAR(255) NOT NULL,
-  google_id VARCHAR(255),
-  profile_image_url TEXT,
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  last_login TIMESTAMP
-);
-```
+- `id` (Primary Key)
+- `nim` (Student ID)
+- `email` (ITK Student Email)
+- `name` (Full Name)
+- `google_id` (Google OAuth ID)
+- `profile_image_url` (Profile Image URL)
+- `created_at` (Creation Timestamp)
+- `updated_at` (Last Update Timestamp)
+- `last_login` (Last Login Timestamp)
+
+### Subjects Table
+- `id` (Primary Key)
+- `code` (Subject Code)
+- `name` (Subject Name)
+- `description` (Subject Description)
+- `semester` (Semester Number)
+- `credits` (Credit Hours)
+
+### User_Subjects Table (Enrollment)
+- `user_id` (Foreign Key to Users)
+- `subject_id` (Foreign Key to Subjects)
+- `enrolled_at` (Enrollment Timestamp)
+
+### Learning_Videos Table
+- `id` (Primary Key)
+- `subject_id` (Foreign Key to Subjects)
+- `title` (Video Title)
+- `description` (Video Description)
+- `video_url` (Video URL)
+- `thumbnail_url` (Thumbnail URL)
+- `duration` (Video Duration in seconds)
+- `order_index` (Display Order)
+- `is_active` (Active Status)
+- `created_at` (Creation Timestamp)
+- `updated_at` (Last Update Timestamp)
+
+### News Table
+- `id` (Primary Key)
+- `title` (News Title)
+- `content` (News Content)
+- `excerpt` (News Excerpt)
+- `image_url` (News Image URL)
+- `author_id` (Foreign Key to Users)
+- `category` (News Category)
+- `is_published` (Publication Status)
+- `published_at` (Publication Timestamp)
+- `created_at` (Creation Timestamp)
+- `updated_at` (Last Update Timestamp)
 
 ---
 
-## Postman Collection Example
+## Notes
 
-```json
-{
-  "info": {
-    "name": "HMIF App API",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
-  },
-  "item": [
-    {
-      "name": "Health Check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": {
-          "raw": "{{baseUrl}}/health",
-          "host": ["{{baseUrl}}"],
-          "path": ["health"]
-        }
-      }
-    },
-    {
-      "name": "Google Login",
-      "request": {
-        "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"idToken\": \"your_google_id_token\"\n}"
-        },
-        "url": {
-          "raw": "{{baseUrl}}/auth/google",
-          "host": ["{{baseUrl}}"],
-          "path": ["auth", "google"]
-        }
-      }
-    },
-    {
-      "name": "Get Profile",
-      "request": {
-        "method": "GET",
-        "header": [
-          {
-            "key": "Authorization",
-            "value": "Bearer {{token}}"
-          }
-        ],
-        "url": {
-          "raw": "{{baseUrl}}/auth/profile",
-          "host": ["{{baseUrl}}"],
-          "path": ["auth", "profile"]
-        }
-      }
-    }
-  ],
-  "variable": [
-    {
-      "key": "baseUrl",
-      "value": "http://localhost:3000"
-    },
-    {
-      "key": "token",
-      "value": "your_jwt_token_here"
-    }
-  ]
-}
-```
+1. All authenticated endpoints require a valid JWT token in the Authorization header.
+2. Admin-only endpoints require the user to be in the admin email list.
+3. Only ITK student emails (`@student.itk.ac.id`) are allowed for registration.
+4. File uploads are handled through ImageKit service.
+5. All timestamps are in ISO 8601 format.
+6. Video duration is stored in seconds.
+7. The API uses MySQL database with connection pooling.
+
+## Rate Limiting
+- 100 requests per 15 minutes per IP address
+- File upload limit: 5MB per file
+- Request body limit: 1

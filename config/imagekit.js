@@ -9,6 +9,9 @@ const imagekit = new ImageKit({
     urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT
 });
 
+// Define max file size (5MB)
+const maxSize = 5 * 1024 * 1024; // 5MB in bytes
+
 // function for upload file to ImageKit
 const uploadFile = async (file, fileName, folder = 'profile-image') => {
     try {
@@ -17,12 +20,12 @@ const uploadFile = async (file, fileName, folder = 'profile-image') => {
             fileName: fileName,
             folder: folder,
             useUniqueFileName: true,
-            responseFields: ['url', 'thumbnailUrl' , 'fileId', 'name'],
+            responseFields: ['url', 'thumbnailUrl', 'fileId', 'name'],
         };
 
         const result = await imagekit.upload(uploadParams);
 
-        return{
+        return {
             success: true,
             data: {
                 url: result.url,
@@ -42,15 +45,14 @@ const uploadFile = async (file, fileName, folder = 'profile-image') => {
 
 // function for delete file from ImageKit
 const deleteFile = async (fileId) => {
-    try{
+    try {
         await imagekit.deleteFile(fileId);
 
         return {
             success: true,
             message: 'File deleted successfully'
         };
-    }
-    catch (error) {
+    } catch (error) {
         console.error('ImageKit delete error:', error.message);
         return {
             success: false,
@@ -60,8 +62,8 @@ const deleteFile = async (fileId) => {
 };
 
 // function for generate signed URL for upload from frontend
-const getUploadSigneture = () => {
-    try{
+const getUploadSignature = () => {
+    try {
         const authParams = imagekit.getAuthenticationParameters();
 
         return {
@@ -79,12 +81,12 @@ const getUploadSigneture = () => {
 
 // function for resize image with transformation
 const getOptimizedImageUrl = (originUrl, transformations = {}) => {
-    try{
-        const{
+    try {
+        const {
             width = 400,
             height = 400,
             quality = 80,
-            format= 'auto',
+            format = 'auto',
         } = transformations;
 
         // make url with transformation
@@ -114,21 +116,21 @@ const getOptimizedImageUrl = (originUrl, transformations = {}) => {
 
 // function for validate image file type
 const validateImageFile = (file) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg' ,'image/png', 'image/webp'];
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
     // validate file type
-    if(!allowedTypes.includes(file.mimetype)) {
+    if (!allowedTypes.includes(file.mimetype)) {
         return {
             success: false,
             message: 'Invalid file type. Only JPEG, PNG, and WebP are allowed.'
         };
     }
 
-    // validate file size
-    if(file.size > maxSize) {
+    // validate file size (fixed: added maxSize definition above)
+    if (file.size > maxSize) {
         return {
             success: false,
-            message: 'File size to large. Maximum size is 5MB.'
+            message: 'File size too large. Maximum size is 5MB.'
         };
     }
 
@@ -143,7 +145,7 @@ module.exports = {
     imagekit,
     uploadFile,
     deleteFile,
-    getUploadSigneture,
+    getUploadSignature,
     getOptimizedImageUrl,
     validateImageFile
 };

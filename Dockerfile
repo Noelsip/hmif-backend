@@ -1,11 +1,25 @@
-FROM node:22-alpine
+FROM node:18-alpine
 
 WORKDIR /usr/app
 
-COPY  . .
+# Copy package files
+COPY package*.json ./
 
-RUN npm install
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
 
+# Copy source code
+COPY . .
+
+# Generate Prisma client
+RUN npx prisma generate
+
+# Expose port
 EXPOSE 3000
 
-CMD ["npm", "start"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node healthcheck.js
+
+# Start application
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

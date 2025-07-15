@@ -1,0 +1,22 @@
+node_modules/
+.env
+.env.docker
+.env.local
+.env.development
+.env.test
+.env.production
+*.log
+dist/
+build/
+.DS_Store
+/generated/
+coverage/
+.nyc_output/
+.vscode/
+.idea/
+
+# Prisma - hanya ignore file yang di-generate
+prisma/migrations/
+prisma/generated/
+prisma/*.db
+prisma/*.db-journal

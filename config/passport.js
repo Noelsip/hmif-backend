@@ -1,6 +1,6 @@
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const { executeQuery } = require('./database');
+const { prisma } = require('./prisma');
 require('dotenv').config();
 
 // Google OAuth strategy configuration
@@ -13,93 +13,99 @@ passport.use(new GoogleStrategy({
         const email = profile.emails[0].value;
         const googleId = profile.id;
         const name = profile.displayName;
+        const profilePicture = profile.photos[0]?.value || null;
 
-        // validate is email is itk email
+        // Validate if email is ITK email
         if (!email.endsWith('@student.itk.ac.id')) {
             return done(null, false, {
-                message: 'Only itk student email is allowed.'
+                message: 'Only ITK student email is allowed.'
             });
         }
 
-        // extract student number from email
+        // Extract student number from email
         const nim = email.split('@')[0];
 
-        // validate nim from email
+        // Validate nim format
         if (!nim.startsWith('11')) {
             return done(null, false, {
                 message: 'Invalid student number format.'
             });
         }
 
+        // Check if email is in admin list
+        const adminEmails = process.env.ADMIN_EMAILS 
+            ? process.env.ADMIN_EMAILS.split(',').map(adminEmail => adminEmail.trim()) 
+            : [];
+        const isAdmin = adminEmails.includes(email);
+
         // Check if user already exists in the database
-        const checkUserQuery = 'SELECT id, nim, email, name FROM users WHERE email = ?';
-        const existingUser = await executeQuery(checkUserQuery, [email, googleId]);
+        let existingUser = await prisma.user.findUnique({
+            where: { email: email }
+        });
 
-        if (existingUser.success && existingUser.data.length > 0) {
-            // User exists, return the user
-            const user = existingUser.data[0];
-
-            if (!user.googleId) {
-                // Update user with Google ID if not already set
-                const updateUserQuery = 'UPDATE users SET googleId = ?, updated_at = NOW() WHERE id = ?';
-                await executeQuery(updateUserQuery, [googleId, user.id]);
-                user.googleId = googleId;
-            }
-            return done(null, user);
+        if (existingUser) {
+            // User exists, update Google ID and admin status if needed
+            const updatedUser = await prisma.user.update({
+                where: { id: existingUser.id },
+                data: {
+                    googleId: googleId,
+                    name: name,
+                    profilePicture: profilePicture,
+                    isAdmin: isAdmin
+                }
+            });
+            return done(null, updatedUser);
         }
 
         // User does not exist, create a new user
-        const insertUserQuery = 'INSERT INTO users (nim, email, name, googleId) VALUES (?, ?, ?, ?)';
-        const newUserResult = await executeQuery(insertUserQuery, [nim, email, name, googleId]);
-
-        if (newUserResult.success) {
-            // get data user after insert
-            const getUserQuery = 'SELECT * FROM users WHERE id = ?';
-            const userResult = await executeQuery(getUserQuery, [newUserResult.data.insertId]);
-
-            if (userResult.success && userResult.data.length > 0) {
-                return done(null, userResult.data[0]);
+        const newUser = await prisma.user.create({
+            data: {
+                email: email,
+                name: name,
+                googleId: googleId,
+                profilePicture: profilePicture,
+                isAdmin: isAdmin
             }
-        }
+        });
 
-        return done(new Error('Failed to create new user.'), null);
+        console.log(`✅ New user created: ${email} ${isAdmin ? '(Admin)' : '(User)'}`);
+        return done(null, newUser);
+
     } catch (error) {
-        console.error('Google OAuth error:', error.message);
+        console.error('Google OAuth error:', error);
         return done(error, null);
     }
 }));
 
 // Serialize user to store in session
 passport.serializeUser((user, done) => {
-    done(null, {id: user.id, type: 'user'});
+    done(null, { id: user.id, type: 'user' });
 });
 
 // Deserialize user from session
 passport.deserializeUser(async (sessionData, done) => {
     try {
-        let query, params;
+        const user = await prisma.user.findUnique({
+            where: { id: sessionData.id },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                profilePicture: true,
+                isAdmin: true,
+                createdAt: true
+            }
+        });
 
-        // Check if sessionData is for user or admin
-        if (sessionData.type === 'admin') {
-            query = 'SELECT id, nim, email, name FROM admins WHERE id = ?';
-        }
-        else {
-            query = 'SELECT id, nim, email, name, profile_image_url FROM users WHERE id = ?';
-        }
-
-        params = [sessionData.id];
-        const result = await executeQuery(query, params);
-
-        if (result.success && result.data.length > 0) {
-            const userData = result.data[0];
-            userData.type = sessionData.type;
-            
-            return done(null, userData);
+        if (user) {
+            return done(null, user);
         }
         return done(null, false);
+
     } catch (error) {
-        console.error('Error deserializing user:', error.message);
+        console.error('Error deserializing user:', error);
         return done(error, null);
     }
 });
+
 module.exports = passport;

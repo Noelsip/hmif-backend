@@ -7,7 +7,7 @@ const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const passport = require('./config/passport');
-const { testConnection } = require('./config/database');
+const { connectDatabase, disconnectDatabase } = require('./config/prisma');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,7 +44,7 @@ app.use(cookieParser());
 
 // Session configuration for Passport
 app.use(session({
-    secret: process.env.SESSION_SECRET ,
+    secret: process.env.SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
     cookie: { 
@@ -57,8 +57,8 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Test database connection on startup
-testConnection();
+// Connect to database on startup
+connectDatabase();
 
 // Basic route untuk test
 app.get('/', (req, res) => {
@@ -79,13 +79,20 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Import and use auth routes
+// Import and use routes
 try {
     const authRoutes = require('./routes/auth');
+    const subjectRoutes = require('./routes/subject');
+    const videoRoutes = require('./routes/videos');
+    const newsRoutes = require('./routes/news');
+
+    // Register routes
     app.use('/auth', authRoutes);
-    console.log('✅ Auth routes loaded successfully');
+    app.use('/api/subject', subjectRoutes); // Fixed typo: subcject -> subject
+    app.use('/api/videos', videoRoutes);
+    app.use('/api/news', newsRoutes);
 } catch (error) {
-    console.error('❌ Error loading auth routes:', error.message);
+    console.error('❌ Error loading routes:', error.message);
 }
 
 // Error handling middleware
@@ -114,20 +121,22 @@ app.listen(PORT, () => {
     console.log(`🌐 Server URL: http://localhost:${PORT}`);
     console.log(`📱 Android Emulator URL: http://10.0.2.2:${PORT}`);
     console.log(`🔗 Available endpoints:`);
-    console.log(`   GET  ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/`);
-    console.log(`   GET  ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/health`);
-    console.log(`   GET  ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/auth/google`);
-    console.log(`   POST ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/auth/google`);
+    console.log(`   GET  http://localhost:${PORT}/`);
+    console.log(`   GET  http://localhost:${PORT}/health`);
+    console.log(`   GET  http://localhost:${PORT}/auth/google`);
+    console.log(`   POST http://localhost:${PORT}/auth/google`);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('SIGTERM received. Shutting down gracefully...');
+    await disconnectDatabase();
     process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('SIGINT received. Shutting down gracefully...');
+    await disconnectDatabase();
     process.exit(0);
 });
 
