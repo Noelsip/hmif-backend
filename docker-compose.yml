@@ -8,46 +8,52 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: hmif_app
+      MYSQL_ROOT_HOST: '%'
     ports:
-      - "3306:3306"
+      - "3306:3306"  # Bind ke semua interface
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
       - hmif-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpassword"]
-      timeout: 20s
-      retries: 10
-      interval: 10s
+    command: --bind-address=0.0.0.0 --default-authentication-plugin=mysql_native_password
+
+  redis:
+    image: redis:7-alpine
+    container_name: hmif-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"  # Bind ke semua interface
+    networks:
+      - hmif-network
+    command: redis-server --appendonly yes
 
   app:
     build: .
+    image: node:18-alpine
     container_name: hmif-app
     restart: unless-stopped
-    env_file:
-      - .env.docker
-    ports:
-      - "3000:3000"
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - hmif-network
+    working_dir: /usr/app
     volumes:
       - .:/usr/app
-      - /usr/app/node_modules
-    command: >
-      sh -c "
-        echo 'Waiting for database to be ready...' &&
-        sleep 15 &&
-        echo 'Generating Prisma client...' &&
-        npx prisma generate &&
-        echo 'Running database migrations...' &&
-        npx prisma migrate deploy &&
-        echo 'Seeding database...' &&
-        npx prisma db seed &&
-        echo 'Starting application...' &&
-        npm start
+      - node_modules:/usr/app/node_modules
+    ports:
+      - "3000:3000"  # Bind ke semua interface
+    environment:
+      - PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
+      - NODE_ENV=production
+      - HOST_IP=10.160.132.109
+    env_file:
+      - .env.docker
+    depends_on:
+      - mysql
+      - redis
+    networks:
+      - hmif-network
+    command: sh -c "
+      apk add --no-cache openssl && 
+      npm install && 
+      npx prisma generate &&
+      npm start
       "
 
 networks:
@@ -56,3 +62,5 @@ networks:
 
 volumes:
   mysql_data:
+  node_modules:
+  redis_data:

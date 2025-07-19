@@ -21,3 +21,4 @@ prisma/generated/
 prisma/*.db
 prisma/*.db-journal
 .env.docker
+docker-auto-env.js

@@ -2,6 +2,258 @@ const express = require('express');
 const { prisma } = require('../config/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Subjects
+ *   description: Subject management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/subject:
+ *   get:
+ *     summary: Get all subjects
+ *     description: Retrieve a paginated list of all subjects
+ *     tags: [Subjects]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term for name, code, or description
+ *       - in: query
+ *         name: semester
+ *         schema:
+ *           type: integer
+ *         description: Filter by semester
+ *     responses:
+ *       200:
+ *         description: Subjects retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/PaginatedResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/Subject'
+ *       500:
+ *         description: Failed to fetch subjects
+ *   post:
+ *     summary: Create new subject
+ *     description: Create a new subject (Admin only)
+ *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - code
+ *               - name
+ *               - semester
+ *               - credits
+ *             properties:
+ *               code:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               semester:
+ *                 type: integer
+ *               credits:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Subject created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 message:
+ *                   type: string
+ *                 data:
+ *                   $ref: '#/components/schemas/Subject'
+ *       400:
+ *         description: Bad request or subject code already exists
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ */
+
+/**
+ * @swagger
+ * /api/subject/{id}:
+ *   get:
+ *     summary: Get subject by ID
+ *     description: Retrieve a specific subject with its learning videos
+ *     tags: [Subjects]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Subject ID
+ *     responses:
+ *       200:
+ *         description: Subject retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/Subject'
+ *       404:
+ *         description: Subject not found
+ *   put:
+ *     summary: Update subject
+ *     description: Update an existing subject (Admin only)
+ *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Subject ID
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               code:
+ *                 type: string
+ *               name:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               semester:
+ *                 type: integer
+ *               credits:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Subject updated successfully
+ *       400:
+ *         description: Bad request or subject code already exists
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: Subject not found
+ *   delete:
+ *     summary: Delete subject
+ *     description: Delete a subject (Admin only)
+ *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Subject ID
+ *     responses:
+ *       200:
+ *         description: Subject deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: Subject not found
+ */
+
+/**
+ * @swagger
+ * /api/subject/{id}/enroll:
+ *   post:
+ *     summary: Enroll to subject
+ *     description: Enroll the authenticated user to a subject
+ *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Subject ID
+ *     responses:
+ *       201:
+ *         description: Successfully enrolled to subject
+ *       400:
+ *         description: Already enrolled to this subject
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Subject not found
+ */
+
+/**
+ * @swagger
+ * /api/subject/{id}/unenroll:
+ *   delete:
+ *     summary: Unenroll from subject
+ *     description: Unenroll the authenticated user from a subject
+ *     tags: [Subjects]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Subject ID
+ *     responses:
+ *       200:
+ *         description: Successfully unenrolled from subject
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: Enrollment not found
+ */
+
 const router = express.Router();
 
 // Get all subjects

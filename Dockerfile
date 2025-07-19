@@ -11,7 +11,8 @@ RUN npm ci --only=production && npm cache clean --force
 # Copy source code
 COPY . .
 
-# Generate Prisma client
+# Generate Prisma client with checksum ignore
+ENV PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
 RUN npx prisma generate
 
 # Expose port
@@ -19,7 +20,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node healthcheck.js
+    CMD node healthcheck.js
 
-# Start application
+# Start command
 CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]

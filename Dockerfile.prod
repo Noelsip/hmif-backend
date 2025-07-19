@@ -1,0 +1,33 @@
+FROM node:18-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install ci --only=production && npm cache clean --force
+
+FROM node:18-alpine AS production
+
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nodejs -u 1001
+
+WORKDIR /app
+
+RUN mkdir -p logs && chown nodejs:nodejs logs
+
+# Copy built dependencies from builder stage
+COPY --from=builder /app/node_modules ./node_modules
+COPY --chown=nodejs:nodejs . .
+
+USER nodejs
+
+# Expose the application port
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD node healthcheck.js
+
+CMD ["npm", "start"]

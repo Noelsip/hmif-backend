@@ -2,6 +2,250 @@ const express = require('express');
 const { prisma } = require('../config/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * tags:
+ *   name: Videos
+ *   description: Learning video management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/videos:
+ *   get:
+ *     summary: Get all learning videos
+ *     description: Retrieve a paginated list of active learning videos
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
+ *       - in: query
+ *         name: subjectId
+ *         schema:
+ *           type: integer
+ *         description: Filter by subject ID
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term for title or description
+ *     responses:
+ *       200:
+ *         description: Videos retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/PaginatedResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/LearningVideo'
+ *   post:
+ *     summary: Create new learning video
+ *     description: Create a new learning video (Admin only)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - subjectId
+ *               - title
+ *               - videoUrl
+ *               - duration
+ *             properties:
+ *               subjectId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               videoUrl:
+ *                 type: string
+ *               duration:
+ *                 type: integer
+ *     responses:
+ *       201:
+ *         description: Learning video created successfully
+ *       400:
+ *         description: Bad request - missing required fields
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: Subject not found
+ */
+
+/**
+ * @swagger
+ * /api/videos/subject/{subjectId}:
+ *   get:
+ *     summary: Get videos by subject
+ *     description: Retrieve all active videos for a specific subject
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: subjectId
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Subject ID
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *     responses:
+ *       200:
+ *         description: Videos retrieved successfully
+ *       404:
+ *         description: Subject not found
+ */
+
+/**
+ * @swagger
+ * /api/videos/{id}:
+ *   get:
+ *     summary: Get video by ID
+ *     description: Retrieve a specific learning video
+ *     tags: [Videos]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Video ID
+ *     responses:
+ *       200:
+ *         description: Video retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/LearningVideo'
+ *       404:
+ *         description: Video not found
+ *   put:
+ *     summary: Update learning video
+ *     description: Update an existing learning video (Admin only)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               subjectId:
+ *                 type: integer
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               videoUrl:
+ *                 type: string
+ *               duration:
+ *                 type: integer
+ *               isActive:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Video updated successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: Video or subject not found
+ *   delete:
+ *     summary: Delete learning video
+ *     description: Delete a learning video (Admin only)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: Video deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: Video not found
+ */
+
+/**
+ * @swagger
+ * /api/videos/{id}/toggle-active:
+ *   patch:
+ *     summary: Toggle video active status
+ *     description: Toggle the active status of a learning video (Admin only)
+ *     tags: [Videos]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: Video ID
+ *     responses:
+ *       200:
+ *         description: Video status toggled successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: Video not found
+ */
+
 const router = express.Router();
 
 // Get all learning videos

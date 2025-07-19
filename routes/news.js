@@ -2,6 +2,292 @@ const express = require('express');
 const { prisma } = require('../config/prisma');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
+/**
+ * @swagger
+ * tags:
+ *   name: News
+ *   description: News management endpoints
+ */
+
+/**
+ * @swagger
+ * /api/news:
+ *   get:
+ *     summary: Get all published news
+ *     description: Retrieve a paginated list of published news
+ *     tags: [News]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *         description: Page number
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *         description: Number of items per page
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *         description: Filter by category
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search term for title, excerpt, or content
+ *     responses:
+ *       200:
+ *         description: News retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               allOf:
+ *                 - $ref: '#/components/schemas/PaginatedResponse'
+ *                 - type: object
+ *                   properties:
+ *                     data:
+ *                       type: array
+ *                       items:
+ *                         $ref: '#/components/schemas/News'
+ *   post:
+ *     summary: Create new news
+ *     description: Create a new news article (Admin only)
+ *     tags: [News]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - title
+ *               - content
+ *               - excerpt
+ *             properties:
+ *               title:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               excerpt:
+ *                 type: string
+ *               imageUrl:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *                 default: general
+ *               isPublished:
+ *                 type: boolean
+ *                 default: false
+ *     responses:
+ *       201:
+ *         description: News created successfully
+ *       400:
+ *         description: Bad request - missing required fields
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ */
+
+/**
+ * @swagger
+ * /api/news/admin:
+ *   get:
+ *     summary: Get all news (Admin only)
+ *     description: Retrieve all news including unpublished (Admin only)
+ *     tags: [News]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 10
+ *       - in: query
+ *         name: category
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [published, draft]
+ *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: News retrieved successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ */
+
+/**
+ * @swagger
+ * /api/news/categories:
+ *   get:
+ *     summary: Get news categories
+ *     description: Get all available news categories with count
+ *     tags: [News]
+ *     responses:
+ *       200:
+ *         description: Categories retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       name:
+ *                         type: string
+ *                       count:
+ *                         type: integer
+ */
+
+/**
+ * @swagger
+ * /api/news/{id}:
+ *   get:
+ *     summary: Get news by ID
+ *     description: Retrieve a specific published news article
+ *     tags: [News]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: News ID
+ *     responses:
+ *       200:
+ *         description: News retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                 data:
+ *                   $ref: '#/components/schemas/News'
+ *       404:
+ *         description: News not found
+ *   put:
+ *     summary: Update news
+ *     description: Update an existing news article (Admin only)
+ *     tags: [News]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               content:
+ *                 type: string
+ *               excerpt:
+ *                 type: string
+ *               imageUrl:
+ *                 type: string
+ *               category:
+ *                 type: string
+ *               isPublished:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: News updated successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: News not found
+ *   delete:
+ *     summary: Delete news
+ *     description: Delete a news article (Admin only)
+ *     tags: [News]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *     responses:
+ *       200:
+ *         description: News deleted successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: News not found
+ */
+
+/**
+ * @swagger
+ * /api/news/{id}/toggle-publish:
+ *   patch:
+ *     summary: Toggle news publish status
+ *     description: Toggle the published status of a news article (Admin only)
+ *     tags: [News]
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         description: News ID
+ *     responses:
+ *       200:
+ *         description: News publish status toggled successfully
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin privileges required
+ *       404:
+ *         description: News not found
+ */
+
+
 const router = express.Router();
 
 // Get all published news
