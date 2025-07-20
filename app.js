@@ -5,8 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
-const passport = require('./config/passport');
-const { testConnection } = require('./config/database');
+const NetworkUtils = require('./utils/network'); // Perbaikan: Tambah import NetworkUtils
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,11 +20,11 @@ console.log(`   IP: ${networkInfo.ip}`);
 console.log(`   Subnet: ${networkInfo.subnet}`);
 console.log('');
 
-// Generate CORS origins - Fixed the function call
+// Generate CORS origins
 const corsOrigins = NetworkUtils.generateCorsOrigins(PORT);
 
 // Safe imports with error handling
-let passport, prisma, disconnectDatabase, redisClient, connectRedis, logger, requestIdMiddleware, rateLimiters;
+let passport, prisma, disconnectDatabase, testConnection, redisClient, connectRedis, logger, requestIdMiddleware, rateLimiters;
 let swaggerUi, swaggerSpec, swaggerUiOptions;
 
 console.log('📦 Loading modules...');
@@ -36,9 +35,14 @@ try {
     const prismaModule = require('./config/prisma');
     prisma = prismaModule.prisma;
     disconnectDatabase = prismaModule.disconnectDatabase;
+    testConnection = prismaModule.testConnection;
     console.log('✅ Prisma client initialized');
 } catch (error) {
     console.warn('⚠️ Prisma config failed to load:', error.message);
+    // Create mock functions
+    prisma = { user: {}, subject: {}, news: {}, learningVideo: {}, studentSubject: {} };
+    disconnectDatabase = async () => console.log('Mock disconnect');
+    testConnection = async () => console.log('Mock test connection');
 }
 
 // Load Redis
@@ -120,6 +124,12 @@ try {
     console.log('✅ Passport loaded successfully');
 } catch (error) {
     console.warn('⚠️ Passport not available:', error.message);
+    // Create mock passport
+    passport = {
+        initialize: () => (req, res, next) => next(),
+        session: () => (req, res, next) => next(),
+        authenticate: () => (req, res, next) => next()
+    };
 }
 
 console.log('⚙️ Configuring middleware...');
@@ -177,7 +187,7 @@ app.use(cookieParser());
 
 // Session configuration for Passport
 app.use(session({
-    secret: process.env.SESSION_SECRET ,
+    secret: process.env.SESSION_SECRET || 'hmif-secret-key-123',
     resave: false,
     saveUninitialized: false,
     cookie: { 
@@ -191,7 +201,45 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // Test database connection on startup
-testConnection();
+if (testConnection) {
+    testConnection();
+}
+
+// Swagger Documentation Route
+if (swaggerUi && swaggerSpec) {
+    // API docs JSON endpoint
+    app.get('/api-docs.json', (req, res) => {
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.send(swaggerSpec);
+    });
+
+    // Custom documentation page (TANPA external resources)
+    app.get('/docs', (req, res) => {
+        const { generateSwaggerHTML } = require('./config/swagger');
+        const html = generateSwaggerHTML(req.get('host'));
+        res.send(html);
+    });
+
+    // Fallback: Traditional Swagger UI (jika custom HTML tidak diinginkan)
+    app.get('/docs-swagger', swaggerUi.serve);
+    app.get('/docs-swagger', swaggerUi.setup(swaggerSpec, {
+        customCss: '.swagger-ui .topbar { display: none; }',
+        customSiteTitle: 'HMIF API Documentation'
+    }));
+
+    console.log(`✅ Custom docs available at http://${networkInfo.ip}:${PORT}/docs`);
+    console.log(`✅ Swagger UI available at http://${networkInfo.ip}:${PORT}/docs-swagger`);
+} else {
+    app.get('/docs', (req, res) => {
+        res.json({
+            message: 'Swagger documentation not available',
+            reason: 'Swagger modules failed to load'
+        });
+    });
+}
 
 // Basic route untuk test
 app.get('/', (req, res) => {
@@ -202,7 +250,8 @@ app.get('/', (req, res) => {
         endpoints: {
             health: '/health',
             docs: '/docs',
-            api: '/api'
+            'api-docs': '/api-docs.json',
+            'network-info': '/network-info'
         }
     });
 });
@@ -218,7 +267,8 @@ app.get('/health', (req, res) => {
         status: {
             prisma: prisma ? 'available' : 'mock',
             redis: redisClient && redisClient.isReady ? 'connected' : 'mock',
-            passport: passport ? 'available' : 'unavailable'
+            passport: passport ? 'available' : 'unavailable',
+            swagger: swaggerUi ? 'available' : 'unavailable'
         }
     });
 });
@@ -243,13 +293,45 @@ app.get('/network-info', (req, res) => {
     });
 });
 
-// Import and use auth routes
+// Import and use routes
 try {
     const authRoutes = require('./routes/auth');
     app.use('/auth', authRoutes);
     console.log('✅ Auth routes loaded successfully');
 } catch (error) {
     console.error('❌ Error loading auth routes:', error.message);
+}
+
+try {
+    const subjectRoutes = require('./routes/subject');
+    app.use('/api/subjects', subjectRoutes);
+    console.log('✅ Subject routes loaded successfully');
+} catch (error) {
+    console.error('❌ Error loading subject routes:', error.message);
+}
+
+try {
+    const newsRoutes = require('./routes/news');
+    app.use('/api/news', newsRoutes);
+    console.log('✅ News routes loaded successfully');
+} catch (error) {
+    console.error('❌ Error loading news routes:', error.message);
+}
+
+try {
+    const videoRoutes = require('./routes/videos');
+    app.use('/api/videos', videoRoutes);
+    console.log('✅ Video routes loaded successfully');
+} catch (error) {
+    console.error('❌ Error loading video routes:', error.message);
+}
+
+try {
+    const uploadRoutes = require('./routes/upload');
+    app.use('/api/upload', uploadRoutes);
+    console.log('✅ Upload routes loaded successfully');
+} catch (error) {
+    console.error('❌ Error loading upload routes:', error.message);
 }
 
 // Error handling middleware
@@ -277,28 +359,32 @@ app.use('*', (req, res) => {
     });
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server - BIND KE SEMUA INTERFACE
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`🗄️  Database: ${process.env.DB_NAME || 'Not configured'}`);
-    console.log(`🌐 Server URL: http://localhost:${PORT}`);
+    console.log(`🌐 Local URL: http://localhost:${PORT}`);
+    console.log(`🌐 Network URL: http://${networkInfo.ip}:${PORT}`);
     console.log(`📱 Android Emulator URL: http://10.0.2.2:${PORT}`);
     console.log(`🔗 Available endpoints:`);
-    console.log(`   GET  ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/`);
-    console.log(`   GET  ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/health`);
-    console.log(`   GET  ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/auth/google`);
-    console.log(`   POST ${PORT === 3000 ? 'http://localhost:3000' : `http://localhost:${PORT}`}/auth/google`);
+    console.log(`   GET  http://${networkInfo.ip}:${PORT}/`);
+    console.log(`   GET  http://${networkInfo.ip}:${PORT}/health`);
+    console.log(`   GET  http://${networkInfo.ip}:${PORT}/docs`);
+    console.log(`   GET  http://${networkInfo.ip}:${PORT}/network-info`);
+    console.log(`   GET  http://${networkInfo.ip}:${PORT}/auth/google`);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
+process.on('SIGTERM', async () => {
     console.log('SIGTERM received. Shutting down gracefully...');
+    if (disconnectDatabase) await disconnectDatabase();
     process.exit(0);
 });
 
-process.on('SIGINT', () => {
+process.on('SIGINT', async () => {
     console.log('SIGINT received. Shutting down gracefully...');
+    if (disconnectDatabase) await disconnectDatabase();
     process.exit(0);
 });
 

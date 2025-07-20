@@ -10,7 +10,7 @@ services:
       MYSQL_DATABASE: hmif_app
       MYSQL_ROOT_HOST: '%'
     ports:
-      - "3306:3306"  # Bind ke semua interface
+      - "0.0.0.0:3306:3306"  # Bind ke semua interface
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
@@ -22,26 +22,30 @@ services:
     container_name: hmif-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"  # Bind ke semua interface
+      - "0.0.0.0:6379:6379"  # Bind ke semua interface
+    volumes:
+      - redis_data:/data
     networks:
       - hmif-network
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --bind 0.0.0.0
 
   app:
     build: .
-    image: node:18-alpine
     container_name: hmif-app
     restart: unless-stopped
-    working_dir: /usr/app
-    volumes:
-      - .:/usr/app
-      - node_modules:/usr/app/node_modules
     ports:
-      - "3000:3000"  # Bind ke semua interface
+      - "0.0.0.0:3000:3000"  # Bind ke semua interface
     environment:
+      - NODE_ENV=development
+      - SERVER_HOST=0.0.0.0
       - PRISMA_ENGINES_CHECKSUM_IGNORE_MISSING=1
-      - NODE_ENV=production
-      - HOST_IP=10.160.132.109
+      - DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=your-secret-key-here
+      - JWT_EXPIRES_IN=1h
+      - REFRESH_TOKEN_SECRET=your-refresh-secret-here
+      - REFRESH_TOKEN_EXPIRES_IN=7d
+      - SESSION_SECRET=your-session-secret-here
     env_file:
       - .env.docker
     depends_on:
@@ -49,16 +53,23 @@ services:
       - redis
     networks:
       - hmif-network
+    volumes:
+      - .:/usr/app
+      - node_modules:/usr/app/node_modules
+    working_dir: /usr/app
     command: sh -c "
-      apk add --no-cache openssl && 
       npm install && 
       npx prisma generate &&
+      npx prisma migrate deploy &&
       npm start
       "
 
 networks:
   hmif-network:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
 
 volumes:
   mysql_data:

@@ -1,8 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-
-const prisma = new PrismaClient({
-    log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
-});
+let prisma;
 
 // Test database connection
 async function connectDatabase() {
@@ -15,23 +11,31 @@ async function connectDatabase() {
     }
 }
 
-// Graceful shutdown
-async function disconnectDatabase() {
-    await prisma.$disconnect();
-    console.log('🔌 Database disconnected');
+// Test connection function for compatibility
+async function testConnection() {
+    try {
+        await connectDatabase();
+    } catch (error) {
+        console.error('❌ Test connection failed:', error);
+    }
 }
 
-module.exports = {
-    prisma,
-    connectDatabase,
-    disconnectDatabase
-};
-
+// Graceful shutdown
+async function disconnectDatabase() {
+    try {
+        if (prisma && prisma.$disconnect) {
+            await prisma.$disconnect();
+            console.log('🔌 Database disconnected');
+        }
+    } catch (error) {
+        console.error('Error disconnecting database:', error);
+    }
+}
 
 try {
     const { PrismaClient } = require('@prisma/client');
     prisma = new PrismaClient({
-        log: ['error'],
+        log: process.env.NODE_ENV === 'development' ? ['query', 'info', 'warn', 'error'] : ['error'],
         errorFormat: 'minimal',
     });
     console.log('✅ Prisma client initialized');
@@ -64,15 +68,9 @@ try {
     };
 }
 
-const disconnectDatabase = async () => {
-    try {
-        if (prisma && prisma.$disconnect) {
-            await prisma.$disconnect();
-            console.log('Database disconnected');
-        }
-    } catch (error) {
-        console.error('Error disconnecting database:', error);
-    }
+module.exports = {
+    prisma,
+    connectDatabase,
+    testConnection,
+    disconnectDatabase
 };
-
-module.exports = { prisma, disconnectDatabase };

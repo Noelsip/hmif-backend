@@ -1,34 +1,37 @@
 @echo off
-echo 🚀 HMIF Backend Auto-Deploy Script
-echo.
+echo 🚀 HMIF Backend Network Fix Deploy
+echo ═══════════════════════════════════
 
-echo 🌐 Auto-detecting network configuration...
+echo 🛑 Stopping containers...
+docker-compose down
+
+echo 🧹 Cleaning Docker...
+docker system prune -f
+
+echo 🌐 Generating network config...
 node docker-auto-env.js
 
-echo.
-echo 📦 Building and starting Docker containers...
-docker-compose down
+echo 🔥 Setting up Windows Firewall...
+netsh advfirewall firewall delete rule name="HMIF Backend" >nul 2>&1
+netsh advfirewall firewall add rule name="HMIF Backend" dir=in action=allow protocol=TCP localport=3000 profile=any
+
+echo 📦 Building containers...
 docker-compose up --build -d
 
-echo.
-echo ⏳ Waiting for services to start...
-timeout /t 15
+echo ⏳ Waiting for services...
+timeout /t 30
+
+echo 🧪 Testing network connectivity...
+node test-network.js
 
 echo.
-echo 🧪 Testing auto-generated endpoints...
-for /f "tokens=2 delims==" %%i in ('findstr "EXTERNAL_URL" .env.docker') do set EXTERNAL_URL=%%i
-
-echo Testing: %EXTERNAL_URL%/health
-curl -s %EXTERNAL_URL%/health
-
+echo ✅ Deploy complete!
 echo.
-echo Testing: %EXTERNAL_URL%/network-info
-curl -s %EXTERNAL_URL%/network-info
-
+echo 📱 Test these URLs from other devices:
+for /f "tokens=2 delims==" %%i in ('findstr "HOST_IP" .env.docker') do (
+    echo    📋 Documentation: http://%%i:3000/docs
+    echo    ❤️  Health Check: http://%%i:3000/health
+    echo    🌐 Network Info: http://%%i:3000/network-info
+)
 echo.
-echo ✅ Auto-deployment complete!
-echo 📱 Access from any device: %EXTERNAL_URL%
-echo 📚 Documentation: %EXTERNAL_URL%/docs
-echo 🌐 Network Info: %EXTERNAL_URL%/network-info
-
 pause
