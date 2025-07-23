@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
-const NetworkUtils = require('./utils/network'); // Perbaikan: Tambah import NetworkUtils
+const NetworkUtils = require('./utils/network');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -24,112 +24,87 @@ console.log('');
 const corsOrigins = NetworkUtils.generateCorsOrigins(PORT);
 
 // Safe imports with error handling
-let passport, prisma, disconnectDatabase, testConnection, redisClient, connectRedis, logger, requestIdMiddleware, rateLimiters;
+let prisma, disconnectDatabase, testConnection, redisClient, connectRedis, logger, requestIdMiddleware, rateLimiters;
 let swaggerUi, swaggerSpec, swaggerUiOptions;
+let passport, configurePassport;
 
 console.log('📦 Loading modules...');
 
 // Load Prisma
 try {
-    console.log('🗄️ Loading Prisma...');
-    const prismaModule = require('./config/prisma');
-    prisma = prismaModule.prisma;
-    disconnectDatabase = prismaModule.disconnectDatabase;
-    testConnection = prismaModule.testConnection;
-    console.log('✅ Prisma client initialized');
+    const prismaConfig = require('./config/prisma');
+    prisma = prismaConfig.prisma;
+    disconnectDatabase = prismaConfig.disconnectDatabase;
+    testConnection = prismaConfig.testConnection;
+    console.log('✅ Prisma loaded successfully');
 } catch (error) {
-    console.warn('⚠️ Prisma config failed to load:', error.message);
-    // Create mock functions
-    prisma = { user: {}, subject: {}, news: {}, learningVideo: {}, studentSubject: {} };
-    disconnectDatabase = async () => console.log('Mock disconnect');
-    testConnection = async () => console.log('Mock test connection');
+    console.error('❌ Failed to load Prisma:', error.message);
+    prisma = null;
 }
 
 // Load Redis
 try {
-    console.log('🔴 Loading Redis...');
-    const redisModule = require('./config/redis');
-    redisClient = redisModule.client;
-    connectRedis = redisModule.connectRedis;
+    const redisConfig = require('./config/redis');
+    redisClient = redisConfig.redisClient;
+    connectRedis = redisConfig.connectRedis;
     console.log('✅ Redis loaded successfully');
 } catch (error) {
-    console.warn('⚠️ Redis module not found, creating mock client');
-    redisClient = {
-        isReady: false,
-        get: () => Promise.resolve(null),
-        set: () => Promise.resolve('OK'),
-        del: () => Promise.resolve(1),
-        ping: () => Promise.resolve('PONG')
-    };
-    connectRedis = async () => console.log('📝 Mock Redis connection established');
+    console.error('❌ Failed to load Redis:', error.message);
+    redisClient = null;
 }
 
 // Load Logger
 try {
-    console.log('📝 Loading Logger...');
     logger = require('./config/logger');
     console.log('✅ Logger loaded successfully');
 } catch (error) {
-    console.warn('⚠️ Logger config failed, using console');
-    logger = {
-        info: console.log,
-        error: console.error,
-        warn: console.warn
-    };
+    console.error('❌ Failed to load Logger:', error.message);
+    logger = { info: console.log, error: console.error, warn: console.warn };
 }
 
 // Load Request ID Middleware
 try {
-    console.log('🆔 Loading Request ID middleware...');
     requestIdMiddleware = require('./middleware/requestId');
-    console.log('✅ Request ID middleware loaded');
+    console.log('✅ Request ID middleware loaded successfully');
 } catch (error) {
-    console.warn('⚠️ RequestId middleware failed, using dummy');
-    requestIdMiddleware = (req, res, next) => {
-        req.requestId = Date.now().toString();
-        next();
-    };
+    console.error('❌ Failed to load Request ID middleware:', error.message);
+    requestIdMiddleware = (req, res, next) => next();
 }
 
 // Load Rate Limiters
 try {
-    console.log('🚦 Loading Rate limiters...');
     rateLimiters = require('./middleware/rateLimiter');
-    console.log('✅ Rate limiters loaded');
+    console.log('✅ Rate limiters loaded successfully');
 } catch (error) {
-    console.warn('⚠️ Rate limiter failed, using dummy');
-    rateLimiters = {
-        general: (req, res, next) => next(),
-        auth: (req, res, next) => next(),
-        upload: (req, res, next) => next()
-    };
+    console.error('❌ Failed to load Rate limiters:', error.message);
+    rateLimiters = {};
 }
 
 // Load Swagger
 try {
-    console.log('📋 Loading Swagger...');
     const swaggerConfig = require('./config/swagger');
     swaggerUi = swaggerConfig.swaggerUi;
     swaggerSpec = swaggerConfig.swaggerSpec;
     swaggerUiOptions = swaggerConfig.swaggerUiOptions;
     console.log('✅ Swagger loaded successfully');
 } catch (error) {
-    console.warn('⚠️ Swagger not available:', error.message);
+    console.error('❌ Failed to load Swagger:', error.message);
+    swaggerUi = null;
 }
 
 // Load Passport
 try {
-    console.log('🔑 Loading Passport...');
-    passport = require('./config/passport');
-    console.log('✅ Passport loaded successfully');
+    const passportConfig = require('./config/passport');
+    passport = passportConfig.passport;
+    configurePassport = passportConfig.configurePassport;
+    
+    // Configure passport strategies
+    configurePassport();
+    
+    console.log('✅ Passport loaded and configured successfully');
 } catch (error) {
-    console.warn('⚠️ Passport not available:', error.message);
-    // Create mock passport
-    passport = {
-        initialize: () => (req, res, next) => next(),
-        session: () => (req, res, next) => next(),
-        authenticate: () => (req, res, next) => next()
-    };
+    console.error('❌ Failed to load Passport:', error.message);
+    passport = null;
 }
 
 console.log('⚙️ Configuring middleware...');
@@ -148,203 +123,188 @@ console.log('✅ Security middleware configured');
 
 // Enhanced CORS configuration
 app.use(cors({
-    origin: function (origin, callback) {
-        // In Docker or production, use environment variable
-        if (process.env.CORS_ORIGINS) {
-            const allowedOrigins = process.env.CORS_ORIGINS.split(',');
-            if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
-                return callback(null, true);
-            }
-        }
-        
-        // Auto-generated origins for development
-        if (!origin || corsOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        
-        // Allow for development
-        if (process.env.NODE_ENV !== 'production') {
-            return callback(null, true);
-        }
-        
-        callback(null, false);
-    },
+    origin: corsOrigins,
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Origin', 'Accept']
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: [
+        'Origin',
+        'X-Requested-With',
+        'Content-Type',
+        'Accept',
+        'Authorization',
+        'X-Request-ID',
+        'X-API-Key'
+    ],
+    exposedHeaders: ['X-Request-ID', 'X-Total-Count'],
+    optionsSuccessStatus: 200,
+    maxAge: 86400 // 24 hours
 }));
 
-console.log('✅ CORS configured');
+console.log('✅ CORS configured with origins:', corsOrigins);
 
-// Other middleware
-app.use(morgan('combined', {
-    stream: { write: message => logger.info(message.trim()) }
-}));
-app.use(rateLimiters.general);
+// Standard middleware
+app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(cookieParser());
 
-// Session configuration for Passport
+// Session configuration
 app.use(session({
-    secret: process.env.SESSION_SECRET || 'hmif-secret-key-123',
+    secret: process.env.SESSION_SECRET || 'hmif-session-secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { 
-        secure: false, // Set to true if using HTTPS
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
 
+console.log('✅ Session middleware configured');
+
 // Initialize Passport
-app.use(passport.initialize());
-app.use(passport.session());
-
-// Test database connection on startup
-if (testConnection) {
-    testConnection();
-}
-
-// Swagger Documentation Route
-if (swaggerUi && swaggerSpec) {
-    // API docs JSON endpoint
-    app.get('/api-docs.json', (req, res) => {
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-        res.send(swaggerSpec);
-    });
-
-    // Custom documentation page (TANPA external resources)
-    app.get('/docs', (req, res) => {
-        const { generateSwaggerHTML } = require('./config/swagger');
-        const html = generateSwaggerHTML(req.get('host'));
-        res.send(html);
-    });
-
-    // Fallback: Traditional Swagger UI (jika custom HTML tidak diinginkan)
-    app.get('/docs-swagger', swaggerUi.serve);
-    app.get('/docs-swagger', swaggerUi.setup(swaggerSpec, {
-        customCss: '.swagger-ui .topbar { display: none; }',
-        customSiteTitle: 'HMIF API Documentation'
-    }));
-
-    console.log(`✅ Custom docs available at http://${networkInfo.ip}:${PORT}/docs`);
-    console.log(`✅ Swagger UI available at http://${networkInfo.ip}:${PORT}/docs-swagger`);
+if (passport) {
+    app.use(passport.initialize());
+    app.use(passport.session());
+    console.log('✅ Passport middleware initialized');
 } else {
-    app.get('/docs', (req, res) => {
-        res.json({
-            message: 'Swagger documentation not available',
-            reason: 'Swagger modules failed to load'
-        });
-    });
+    console.warn('⚠️ Passport not available, authentication will not work');
 }
 
-// Basic route untuk test
+// Test connections
+(async () => {
+    console.log('🔍 Testing connections...');
+    
+    // Test database connection
+    if (testConnection) {
+        try {
+            await testConnection();
+            console.log('✅ Database connection successful');
+        } catch (error) {
+            console.error('❌ Database connection failed:', error.message);
+        }
+    }
+    
+    // Test Redis connection
+    if (connectRedis) {
+        try {
+            await connectRedis();
+            console.log('✅ Redis connection successful');
+        } catch (error) {
+            console.error('❌ Redis connection failed:', error.message);
+        }
+    }
+})();
+
+// Basic routes
 app.get('/', (req, res) => {
     res.json({
-        message: 'HMIF App Backend API',
-        version: '1.0.0',
-        status: 'running',
-        endpoints: {
-            health: '/health',
-            docs: '/docs',
-            'api-docs': '/api-docs.json',
-            'network-info': '/network-info'
+        success: true,
+        message: 'HMIF Backend API is running',
+        data: {
+            version: '1.0.0',
+            environment: process.env.NODE_ENV || 'development',
+            timestamp: new Date().toISOString(),
+            network: networkInfo,
+            features: {
+                database: !!prisma,
+                redis: !!redisClient,
+                authentication: !!passport,
+                documentation: !!swaggerUi
+            }
         }
     });
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-    res.json({
+app.get('/health', async (req, res) => {
+    const healthStatus = {
         success: true,
         message: 'Server is healthy',
-        timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development',
-        version: '1.0.0',
-        status: {
-            prisma: prisma ? 'available' : 'mock',
-            redis: redisClient && redisClient.isReady ? 'connected' : 'mock',
-            passport: passport ? 'available' : 'unavailable',
-            swagger: swaggerUi ? 'available' : 'unavailable'
+        data: {
+            status: 'healthy',
+            timestamp: new Date().toISOString(),
+            uptime: process.uptime(),
+            environment: process.env.NODE_ENV || 'development',
+            services: {
+                database: 'unknown',
+                redis: 'unknown',
+                passport: !!passport
+            },
+            memory: process.memoryUsage(),
+            network: networkInfo
         }
-    });
-});
+    };
 
-// Network info endpoint
-app.get('/network-info', (req, res) => {
-    res.json({
-        success: true,
-        network: networkInfo,
-        server: {
-            host: process.env.SERVER_HOST || '0.0.0.0',
-            port: PORT,
-            external_url: process.env.EXTERNAL_URL || `http://${networkInfo.ip}:${PORT}`
-        },
-        access: {
-            local: `http://localhost:${PORT}`,
-            network: `http://${networkInfo.ip}:${PORT}`,
-            docs: `http://${networkInfo.ip}:${PORT}/docs`
-        },
-        cors_origins: corsOrigins.slice(0, 10), // Show first 10 for brevity
-        environment: process.env.NODE_ENV || 'development'
-    });
+    // Test database
+    if (testConnection) {
+        try {
+            await testConnection();
+            healthStatus.data.services.database = 'connected';
+        } catch (error) {
+            healthStatus.data.services.database = 'disconnected';
+            healthStatus.success = false;
+        }
+    }
+
+    // Test Redis
+    if (redisClient) {
+        try {
+            await redisClient.ping();
+            healthStatus.data.services.redis = 'connected';
+        } catch (error) {
+            healthStatus.data.services.redis = 'disconnected';
+        }
+    }
+
+    const statusCode = healthStatus.success ? 200 : 503;
+    res.status(statusCode).json(healthStatus);
 });
 
 // Import and use routes
 try {
     const authRoutes = require('./routes/auth');
     app.use('/auth', authRoutes);
-    console.log('✅ Auth routes loaded successfully');
+    console.log('✅ Auth routes loaded');
 } catch (error) {
-    console.error('❌ Error loading auth routes:', error.message);
+    console.error('❌ Failed to load auth routes:', error.message);
 }
 
-try {
-    const subjectRoutes = require('./routes/subject');
-    app.use('/api/subjects', subjectRoutes);
-    console.log('✅ Subject routes loaded successfully');
-} catch (error) {
-    console.error('❌ Error loading subject routes:', error.message);
+// Swagger documentation
+if (swaggerUi && swaggerSpec) {
+    app.use('/docs-swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+    console.log('✅ Swagger documentation available at /docs-swagger');
 }
 
-try {
-    const newsRoutes = require('./routes/news');
-    app.use('/api/news', newsRoutes);
-    console.log('✅ News routes loaded successfully');
-} catch (error) {
-    console.error('❌ Error loading news routes:', error.message);
-}
-
-try {
-    const videoRoutes = require('./routes/videos');
-    app.use('/api/videos', videoRoutes);
-    console.log('✅ Video routes loaded successfully');
-} catch (error) {
-    console.error('❌ Error loading video routes:', error.message);
-}
-
-try {
-    const uploadRoutes = require('./routes/upload');
-    app.use('/api/upload', uploadRoutes);
-    console.log('✅ Upload routes loaded successfully');
-} catch (error) {
-    console.error('❌ Error loading upload routes:', error.message);
-}
+// Network info endpoint
+app.get('/network-info', (req, res) => {
+    const dockerEnv = NetworkUtils.generateDockerEnv(PORT);
+    
+    res.json({
+        success: true,
+        message: 'Network information',
+        data: {
+            ...networkInfo,
+            ...dockerEnv,
+            corsOrigins,
+            accessUrls: {
+                local: `http://localhost:${PORT}`,
+                network: `http://${networkInfo.ip}:${PORT}`,
+                documentation: `http://${networkInfo.ip}:${PORT}/docs-swagger`,
+                health: `http://${networkInfo.ip}:${PORT}/health`
+            }
+        }
+    });
+});
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-    logger.error('Global error:', {
-        message: err.message,
-        stack: err.stack,
-        requestId: req.requestId
-    });
+app.use((error, req, res, next) => {
+    console.error('❌ Global Error:', error);
+    logger.error('Global error:', error);
     
     res.status(500).json({
         success: false,
         message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
         requestId: req.requestId
     });
 });
@@ -355,48 +315,52 @@ app.use('*', (req, res) => {
         success: false,
         message: 'Endpoint not found',
         path: req.originalUrl,
+        method: req.method,
+        availableEndpoints: [
+            'GET /',
+            'GET /health',
+            'GET /network-info',
+            'GET /auth/google',
+            'POST /auth/logout',
+            'GET /docs-swagger'
+        ],
         requestId: req.requestId
     });
 });
 
-// Start server - BIND KE SEMUA INTERFACE
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`🗄️  Database: ${process.env.DB_NAME || 'Not configured'}`);
-    console.log(`🌐 Local URL: http://localhost:${PORT}`);
-    console.log(`🌐 Network URL: http://${networkInfo.ip}:${PORT}`);
-    console.log(`📱 Android Emulator URL: http://10.0.2.2:${PORT}`);
-    console.log(`🔗 Available endpoints:`);
-    console.log(`   GET  http://${networkInfo.ip}:${PORT}/`);
-    console.log(`   GET  http://${networkInfo.ip}:${PORT}/health`);
-    console.log(`   GET  http://${networkInfo.ip}:${PORT}/docs`);
-    console.log(`   GET  http://${networkInfo.ip}:${PORT}/network-info`);
-    console.log(`   GET  http://${networkInfo.ip}:${PORT}/auth/google`);
-});
-
 // Graceful shutdown
 process.on('SIGTERM', async () => {
-    console.log('SIGTERM received. Shutting down gracefully...');
-    if (disconnectDatabase) await disconnectDatabase();
+    console.log('🔄 SIGTERM received, shutting down gracefully...');
+    
+    if (disconnectDatabase) {
+        await disconnectDatabase();
+    }
+    
+    if (redisClient) {
+        await redisClient.quit();
+    }
+    
     process.exit(0);
 });
 
-process.on('SIGINT', async () => {
-    console.log('SIGINT received. Shutting down gracefully...');
-    if (disconnectDatabase) await disconnectDatabase();
-    process.exit(0);
+// Start server
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log('\n🚀 HMIF Backend Server Started Successfully!');
+    console.log('═════════════════════════════════════════');
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🏠 Local URL: http://localhost:${PORT}`);
+    console.log(`📡 Network URL: http://${networkInfo.ip}:${PORT}`);
+    console.log(`❤️  Health Check: http://${networkInfo.ip}:${PORT}/health`);
+    if (swaggerUi) console.log(`📚 Documentation: http://${networkInfo.ip}:${PORT}/docs-swagger`);
+    if (passport) console.log(`🔐 Google OAuth: http://${networkInfo.ip}:${PORT}/auth/google`);
+    console.log(`🌐 CORS Origins: ${corsOrigins.join(', ')}`);
+    console.log('═════════════════════════════════════════\n');
 });
 
-// Handle uncaught exceptions
-process.on('uncaughtException', (error) => {
-    logger.error('Uncaught Exception:', error);
-    process.exit(1);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    process.exit(1);
+// Handle server errors
+server.on('error', (error) => {
+    console.error('❌ Server Error:', error);
+    logger.error('Server error:', error);
 });
 
 module.exports = app;

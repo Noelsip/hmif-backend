@@ -2,6 +2,8 @@ const express = require('express');
 const passport = require('passport');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/prisma');
+const Environment = require('./environment');
+
 
 /**
  * @swagger
@@ -151,14 +153,23 @@ const { prisma } = require('../config/prisma');
 
 const router = express.Router();
 
-// Google OAuth login
-router.get('/google',
+// Google OAuth dengan environment detection
+router.get('/google', (req, res, next) => {
+    const config = Environment.getConfig();
+    
+    console.log('🔍 Starting OAuth flow:', {
+        environment: config.environment,
+        callback: config.callback,
+        userAgent: req.get('User-Agent')?.substring(0, 50)
+    });
+    
     passport.authenticate('google', {
-        scope: ['profile', 'email']
-    })
-);
+        scope: ['profile', 'email'],
+        prompt: 'select_account'
+    })(req, res, next);
+});
 
-// Google OAuth callback
+// Enhanced callback dengan smart redirect
 router.get('/google/callback',
     passport.authenticate('google', {
         failureRedirect: '/auth/failure',
@@ -166,67 +177,207 @@ router.get('/google/callback',
     }),
     async (req, res) => {
         try {
+            const config = Environment.getConfig();
             const user = req.user;
             
-            // Generate JWT tokens
+            if (!user) {
+                return res.redirect('/auth/failure?error=no_user_data');
+            }
+
+            console.log('✅ OAuth Success:', {
+                user: user.email,
+                environment: config.environment
+            });
+
+            // Generate tokens
             const accessToken = jwt.sign(
                 { 
                     id: user.id, 
                     email: user.email,
-                    isAdmin: user.isAdmin 
+                    isAdmin: user.isAdmin || false
                 },
                 process.env.JWT_SECRET,
-                { expiresIn: process.env.JWT_EXPIRES_IN }
+                { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
             );
 
             const refreshToken = jwt.sign(
                 { id: user.id },
                 process.env.REFRESH_TOKEN_SECRET,
-                { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN }
+                { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' }
             );
 
-            // Set HTTP-only cookies
-            res.cookie('accessToken', accessToken, {
+            // Set cookies
+            const cookieOptions = {
                 httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
-                maxAge: 60 * 60 * 1000 // 1 hour
+                secure: config.isProduction,
+                sameSite: config.isProduction ? 'none' : 'lax',
+                domain: config.isProduction ? process.env.COOKIE_DOMAIN : undefined
+            };
+
+            res.cookie('accessToken', accessToken, {
+                ...cookieOptions,
+                maxAge: 24 * 60 * 60 * 1000 // 24 hours
             });
 
             res.cookie('refreshToken', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: 'lax',
+                ...cookieOptions,
                 maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
             });
 
-            if (process.env.NODE_ENV === 'development') {
+            // Smart redirect berdasarkan environment dan client
+            const userAgent = req.get('User-Agent') || '';
+            const isMobile = /Mobile|Android|iPhone|iPad/.test(userAgent);
+            
+            if (config.isDevelopment || req.query.format === 'json') {
+                // Development atau explicit JSON request
                 return res.json({
                     success: true,
-                    message: 'Login successful',
+                    message: 'Authentication successful',
                     data: {
-                        accessToken,
-                        refreshToken,
                         user: {
                             id: user.id,
                             email: user.email,
                             name: user.name,
-                            isAdmin: user.isAdmin
-                        }
-                    }
+                            profilePicture: user.profilePicture,
+                            nim: user.nim,
+                            isAdmin: user.isAdmin || false
+                        },
+                        accessToken,
+                        refreshToken,
+                        expiresIn: process.env.JWT_EXPIRES_IN || '24h'
+                    },
+                    environment: config.environment
                 });
+            } else {
+                // Production atau web redirect
+                const redirectUrl = `${config.frontend}/auth/success?token=${encodeURIComponent(accessToken)}`;
+                console.log('🔄 Redirecting to:', redirectUrl);
+                return res.redirect(redirectUrl);
             }
 
-            // Redirect to frontend
-            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:8080';
-            res.redirect(`${frontendUrl}/auth/success`);
-
         } catch (error) {
-            console.error('Auth callback error:', error);
-            res.redirect('/auth/failure');
+            console.error('❌ Callback Error:', error);
+            res.redirect(`/auth/failure?error=${encodeURIComponent(error.message)}`);
         }
     }
 );
+
+// Mobile/API Auth endpoint
+router.post('/mobile', async (req, res) => {
+    try {
+        const { idToken, platform } = req.body;
+        
+        if (!idToken) {
+            return res.status(400).json({
+                success: false,
+                message: 'ID token is required'
+            });
+        }
+
+        // Verify Google ID Token (implement with google-auth-library)
+        const { OAuth2Client } = require('google-auth-library');
+        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+        
+        const ticket = await client.verifyIdToken({
+            idToken: idToken,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        
+        const payload = ticket.getPayload();
+        
+        // Find or create user
+        let user = await prisma.user.findUnique({
+            where: { googleId: payload.sub }
+        });
+
+        if (!user) {
+            const email = payload.email;
+            const nim = email.includes('@student.itk.ac.id') 
+                ? email.split('@')[0] 
+                : null;
+
+            user = await prisma.user.create({
+                data: {
+                    googleId: payload.sub,
+                    email: email,
+                    name: payload.name,
+                    profilePicture: payload.picture,
+                    nim: nim,
+                    isAdmin: false,
+                    isActive: true
+                }
+            });
+        } else {
+            user = await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    lastLoginAt: new Date(),
+                    profilePicture: payload.picture
+                }
+            });
+        }
+
+        // Generate tokens
+        const accessToken = jwt.sign(
+            { 
+                id: user.id, 
+                email: user.email,
+                isAdmin: user.isAdmin || false
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        const refreshToken = jwt.sign(
+            { id: user.id },
+            process.env.REFRESH_TOKEN_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            success: true,
+            message: 'Mobile authentication successful',
+            data: {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    profilePicture: user.profilePicture,
+                    nim: user.nim,
+                    isAdmin: user.isAdmin || false
+                },
+                accessToken,
+                refreshToken,
+                expiresIn: '24h'
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Mobile Auth Error:', error);
+        res.status(401).json({
+            success: false,
+            message: 'Mobile authentication failed',
+            error: error.message
+        });
+    }
+});
+
+// Environment info endpoint
+router.get('/environment', (req, res) => {
+    const config = Environment.getConfig();
+    
+    res.json({
+        success: true,
+        data: {
+            environment: config.environment,
+            api: config.api,
+            frontend: config.frontend,
+            callback: config.callback,
+            networkInfo: config.networkInfo,
+            corsOrigins: config.corsOrigins
+        }
+    });
+});
 
 // Get current user
 router.get('/me', async (req, res) => {

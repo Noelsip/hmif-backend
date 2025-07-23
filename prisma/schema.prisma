@@ -7,88 +7,303 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// User table - untuk sistem autentikasi
 model User {
-  id              Int               @id @default(autoincrement())
-  googleId        String?           @unique
-  email           String            @unique
-  name            String
-  profilePicture  String?
-  isAdmin         Boolean           @default(false)
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  
+  id          Int             @id @default(autoincrement())
+  googleId    String          @unique
+  email       String          @unique
+  name        String
+  picture     String?
+  nim         String?         @unique
+  role        UserRole        @default(USER)
+  isActive    Boolean         @default(true)
+  lastLogin   DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
   // Relations
-  studentSubjects StudentSubject[]
-  news            News[]
-  
+  studentSubjects     StudentSubject[]
+  newsArticles        News[]
+  videoProgresses     VideoProgress[]
+  achievements        Achievement[]
+  announcements       Announcement[]
+  events              Event[]
+  eventRegistrations  EventRegistration[]
+  uploadedGalleries   Gallery[]
+
   @@map("user")
 }
 
+// Subject table - untuk mata kuliah
 model Subject {
-  id              Int               @id @default(autoincrement())
-  code            String            @unique @db.VarChar(100)
-  name            String            @db.VarChar(100)
-  description     String?           @db.Text
-  semester        Int
-  credits         Int
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
-  
+  id          Int             @id @default(autoincrement())
+  code        String          @unique @db.VarChar(100)
+  name        String          @db.VarChar(100)
+  description String?         @db.Text
+  semester    Int
+  credits     Int
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
   // Relations
-  studentSubjects StudentSubject[]
-  learningVideos  LearningVideo[]
-  
+  studentSubjects   StudentSubject[]
+  learningVideos    LearningVideo[]
+
   @@map("subject")
 }
 
+// StudentSubject table - untuk relasi antara User dan Subject
 model StudentSubject {
-  id         Int      @id @default(autoincrement())
-  userId     Int
-  subjectId  Int
-  enrolledAt DateTime @default(now())
+  id          Int             @id @default(autoincrement())
+  userId      Int
+  subjectId   Int
+  enrolledAt  DateTime        @default(now())
   
   // Relations
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject     Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
   @@unique([userId, subjectId], name: "unique_user_subject")
   @@map("student_subject")
 }
 
+// LearningVideo table - untuk video pembelajaran
 model LearningVideo {
-  id          Int      @id @default(autoincrement())
-  subjectId   Int
-  title       String   @db.VarChar(255)
-  description String?  @db.Text
-  videoUrl    String   @db.VarChar(255)
-  duration    Int
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  id                Int             @id @default(autoincrement())
+  subjectId         Int
+  title             String          @db.VarChar(255)
+  description       String?         @db.Text
+  videoUrl          String          @db.VarChar(500)
+  duration          Int             // Duration in seconds
+  orderIndex        Int             @default(0)
+  thumbnailUrl      String?         @db.VarChar(500)
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
   // Relations
-  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
-  
+  subject           Subject         @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  videoProgresses   VideoProgress[]
+
   @@map("learning_video")
 }
 
-model News {
-  id          Int      @id @default(autoincrement())
-  title       String   @db.VarChar(255)
-  content     String   @db.Text
-  excerpt     String   @db.Text
-  imageUrl    String?  @db.VarChar(255)
-  authorId    Int
-  category    String   @default("general") @db.VarChar(100)
-  isPublished Boolean  @default(true)
-  publishedAt DateTime @default(now())
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+// VideoProgress table - untuk melacak progres video
+model VideoProgress {
+  id                Int             @id @default(autoincrement())
+  userId            Int
+  videoId           Int
+  watchDuration     Int             @default(0) // Duration watched in seconds
+  isCompleted       Boolean         @default(false)
+  lastWatchedAt     DateTime        @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
   // Relations
-  author User @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  
-  @@index([isPublished, publishedAt], name: "idx_published")
-  @@index([category], name: "idx_category")
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  video             LearningVideo   @relation(fields: [videoId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, videoId])
+  @@map("video_progress")
+}
+
+// News table - untuk artikel berita
+model News {
+  id                Int             @id @default(autoincrement())
+  title             String          @db.VarChar(255)
+  content           String          @db.LongText
+  excerpt           String          @db.Text
+  imageUrl          String?         @db.VarChar(500)
+  authorId          Int
+  category          NewsCategory    @default(GENERAL)
+  tags              String?         @db.VarChar(500)
+  isPublished       Boolean         @default(true)
+  isFeatured        Boolean         @default(false)
+  views             Int             @default(0)
+  publishedAt       DateTime?       @default(now())
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  // Relations
+  author            User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([isPublished, publishedAt])
+  @@index([category])
+  @@index([isFeatured])
   @@map("news")
+}
+
+// Announcement table - untuk pengumuman Admin
+model Announcement {
+  id                Int                 @id @default(autoincrement())
+  title             String              @db.VarChar(255)
+  content           String              @db.Text
+  type              AnnouncementType    @default(INFO)
+  priority          Priority            @default(MEDIUM)
+  authorId          Int
+  targetAudience    String?             @db.VarChar(100)
+  semester          Int?
+  isActive          Boolean             @default(true)
+  startDate         DateTime?           @default(now())
+  endDate           DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  // Relations
+  author            User                @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([isActive, startDate])
+  @@index([type])
+  @@index([priority])
+  @@map("announcement")
+}
+
+// Event table - untuk acara
+model Event {
+  id                  Int             @id @default(autoincrement())
+  title               String          @db.VarChar(255)
+  description         String?         @db.Text
+  location            String?         @db.VarChar(255)
+  imageUrl            String?         @db.VarChar(500)
+  organizerId         Int
+  startDate           DateTime
+  endDate             DateTime
+  registrationStart   DateTime?
+  registrationEnd     DateTime?
+  maxParticipants     Int?            @default(0)
+  currentParticipants Int             @default(0)
+  isActive            Boolean         @default(true)
+  requiresRegistration Boolean        @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  // Relations
+  organizer           User            @relation(fields: [organizerId], references: [id], onDelete: Cascade)
+  registrations       EventRegistration[]
+
+  @@index([startDate])
+  @@index([isActive])
+  @@map("event")
+}
+
+// EventRegistration - pendaftaran event
+model EventRegistration {
+  id                Int                 @id @default(autoincrement())
+  eventId           Int
+  userId            Int
+  status            RegistrationStatus  @default(PENDING)
+  registeredAt      DateTime            @default(now())
+  notes             String?             @db.Text
+
+  // Relations
+  event             Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_registration")
+}
+
+// Achievement - pencapaian mahasiswa
+model Achievement {
+  id                Int                 @id @default(autoincrement())
+  userId            Int
+  title             String              @db.VarChar(255)
+  description       String              @db.Text
+  category          AchievementCategory @default(ACADEMIC)
+  badgeIcon         String?             @db.VarChar(500)
+  points            Int                 @default(0)
+  issuedAt          DateTime            @default(now())
+  createdAt         DateTime            @default(now())
+
+  // Relations
+  user              User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([category])
+  @@map("achievement")
+}
+
+// Gallery - galeri foto kegiatan
+model Gallery {
+  id                Int               @id @default(autoincrement())
+  title             String            @db.VarChar(255)
+  description       String?           @db.Text
+  imageUrl          String            @db.VarChar(500)
+  category          GalleryCategory   @default(EVENT)
+  uploadedBy        Int?
+  isActive          Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Relations
+  uploader          User?             @relation(fields: [uploadedBy], references: [id], onDelete: SetNull)
+
+  @@index([category])
+  @@index([isActive])
+  @@map("gallery")
+}
+
+// Settings - pengaturan aplikasi
+model AppSettings {
+  id                Int               @id @default(autoincrement())
+  key               String            @unique @db.VarChar(100)
+  value             String            @db.Text
+  description       String?           @db.VarChar(255)
+  updatedBy         Int?
+  updatedAt         DateTime          @updatedAt
+  createdAt         DateTime          @default(now())
+
+  @@map("app_settings")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum NewsCategory {
+  GENERAL
+  ACADEMIC
+  EVENTS
+  ANNOUNCEMENTS
+}
+
+enum AnnouncementType {
+  INFO
+  WARNING
+  URGENT
+  MAINTENANCE
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AchievementCategory {
+  ACADEMIC
+  COMPETITION
+  ORGANIZATION
+  COMMUNITY_SERVICE
+  CERTIFICATION
+}
+
+enum GalleryCategory {
+  EVENT
+  ACADEMIC
+  COMPETITION
+  ORGANIZATION
+  GRADUATION
+  FACILITY
 }

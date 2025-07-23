@@ -1,10 +1,7 @@
 node_modules/
 .env
-.env.docker
-.env.local
-.env.development
-.env.test
-.env.production
+.env.*
+!.env.example
 *.log
 dist/
 build/
@@ -15,10 +12,30 @@ coverage/
 .vscode/
 .idea/
 
-# Prisma - hanya ignore file yang di-generate
+# Prisma
 prisma/migrations/
 prisma/generated/
 prisma/*.db
 prisma/*.db-journal
-.env.docker
+
+# Docker auto-generated files
 docker-auto-env.js
+.env.docker
+temp_count.txt
+
+# Backup files
+*.backup
+
+# OS generated files
+Thumbs.db
+.DS_Store
+*.swp
+*.swo
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
