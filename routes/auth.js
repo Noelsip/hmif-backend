@@ -154,7 +154,7 @@ const Environment = require('../config/environment');
 const router = express.Router();
 
 // Google OAuth dengan environment detection
-router.get('/google', (req, res, next) => {
+route.get('/google', (req, res, next) => {
     const config = Environment.getConfig();
     
     console.log('🔍 Starting OAuth flow:', {
