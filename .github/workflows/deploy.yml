@@ -20,6 +20,9 @@ jobs:
           command_timeout: 10m
           script: |
             cd ${{ secrets.VPS_PATH }}
+            # Reset local changes and force pull
+            git stash
+            git reset --hard HEAD
             git pull origin main
             chmod +x auto-deploy.sh
             ./auto-deploy.sh
