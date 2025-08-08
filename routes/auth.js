@@ -2,7 +2,7 @@ const express = require('express');
 const passport = require('passport');
 const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/prisma');
-const Environment = require('./config/environment');
+const Environment = require('../config/environment');
 
 
 /**
