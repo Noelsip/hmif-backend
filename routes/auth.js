@@ -160,14 +160,20 @@ router.get('/google', (req, res, next) => {
     console.log('🔍 Starting OAuth flow:', {
         environment: config.environment,
         callback: config.callback,
-        userAgent: req.get('User-Agent')?.substring(0, 50)
+        userAgent: req.get('User-Agent')?.substring(0, 50),
+        clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET'
     });
     
-    passport.authenticate('google', {
+    
+    const authOptions = {
         scope: ['profile', 'email'],
         prompt: 'select_account',
         access_type: 'offline',
-    })(req, res, next);
+        include_granted_scopes: true
+    };
+    
+    console.log('🔍 OAuth options:', authOptions);
+    
 });
 
 // Enhanced callback dengan smart redirect
