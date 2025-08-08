@@ -27,101 +27,116 @@ if [ ! -f ".env" ]; then
     fi
 fi
 
+# 📝 Buat .env.docker jika tidak ada
+if [ ! -f ".env.docker" ]; then
+    echo "🔧 Membuat .env.docker untuk Docker deployment..."
+    # Detect local IP
+    LOCAL_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+    
+    cat > .env.docker << 'EOF'
+# Docker Production Environment
+HOST_IP=AUTO_DETECT
+NETWORK_SUBNET=172.20.0
+SERVER_HOST=0.0.0.0
+EXTERNAL_URL=AUTO_DETECT
+FRONTEND_URL=AUTO_DETECT
+
+# Server Configuration
+PORT=3000
+NODE_ENV=production
+
+# Database Configuration (Docker internal services)
+DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app
+REDIS_URL=redis://redis:6379
+
+# JWT Configuration - CHANGE THESE IN PRODUCTION!
+JWT_SECRET=your-production-jwt-secret-here
+JWT_EXPIRES_IN=1h
+REFRESH_TOKEN_SECRET=your-production-refresh-secret-here
+REFRESH_TOKEN_EXPIRES_IN=7d
+
+# Session Configuration
+SESSION_SECRET=your-production-session-secret-here
+
+# Google OAuth Configuration - ADD YOUR CREDENTIALS!
+GOOGLE_CLIENT_ID=your_google_client_id_here
+GOOGLE_CLIENT_SECRET=your_google_client_secret_here
+GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
+
+# ImageKit Configuration - ADD YOUR CREDENTIALS!
+IMAGEKIT_PUBLIC_KEY=your_imagekit_public_key_here
+IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key_here
+IMAGEKIT_URL_ENDPOINT=https://ik.imagekit.io/your_imagekit_id
+
+# Admin Configuration
+ADMIN_EMAILS=admin@yourdomain.com
+
+# Logging
+LOG_LEVEL=info
+EOF
+    
+    echo "✅ File .env.docker dibuat dengan template default"
+    echo "⚠️  PENTING: Edit .env.docker dengan kredensial yang benar sebelum deploy production!"
+fi
+
 # 🛑 Stop service lama
 echo "🛑 Menghentikan service lama..."
-docker compose down --volumes --remove-orphans
+docker compose down --volumes --remove-orphans 2>/dev/null || true
 
 # 🧹 Bersihkan resource docker
 echo "🧹 Membersihkan resource Docker..."
 docker system prune -f
 
-# 🌐 Generate network config
+# 🌐 Generate network config jika ada script
 if [ -f "docker-auto-env.js" ]; then
+    echo "🌐 Menggenerate konfigurasi network..."
     node docker-auto-env.js
 else
-    echo "📝 Membuat konfigurasi network..."
-    cat <<EOF > docker-auto-env.js
+    echo "🌐 Membuat script auto network config..."
+    cat > docker-auto-env.js << 'EOF'
 const os = require('os');
 const fs = require('fs');
+
+// Get network interfaces
 const interfaces = os.networkInterfaces();
 let hostIP = 'localhost';
+
+// Find the first non-internal IPv4 address
 for (const name of Object.keys(interfaces)) {
-  for (const iface of interfaces[name]) {
-    if (iface.family === 'IPv4' && !iface.internal && iface.address.startsWith('192.168')) {
-      hostIP = iface.address; break;
+    for (const iface of interfaces[name]) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+            hostIP = iface.address;
+            break;
+        }
     }
-  }
+    if (hostIP !== 'localhost') break;
 }
-const config = \`HOST_IP=\${hostIP}\nNETWORK_SUBNET=172.20.0\nEXTERNAL_URL=http://\${hostIP}:3000\nFRONTEND_URL=http://\${hostIP}:3000\`;
-fs.writeFileSync('.env.docker', config);
-console.log('✅ Network config generated for IP:', hostIP);
+
+// Read existing .env.docker and update AUTO_DETECT values
+let envContent = '';
+if (fs.existsSync('.env.docker')) {
+    envContent = fs.readFileSync('.env.docker', 'utf8');
+    
+    // Replace AUTO_DETECT values
+    envContent = envContent.replace(/HOST_IP=AUTO_DETECT/g, `HOST_IP=${hostIP}`);
+    envContent = envContent.replace(/EXTERNAL_URL=AUTO_DETECT/g, `EXTERNAL_URL=http://${hostIP}:3000`);
+    envContent = envContent.replace(/FRONTEND_URL=AUTO_DETECT/g, `FRONTEND_URL=http://${hostIP}:3000`);
+    envContent = envContent.replace(/GOOGLE_CALLBACK_URL=http:\/\/localhost:3000\/auth\/google\/callback/g, `GOOGLE_CALLBACK_URL=http://${hostIP}:3000/auth/google/callback`);
+    
+    fs.writeFileSync('.env.docker', envContent);
+}
+
+console.log('✅ Network config updated for IP:', hostIP);
 EOF
+    
     node docker-auto-env.js
 fi
 
-# 🔥 Firewall setup (opsional, hanya jika ufw aktif)
-if command -v ufw &> /dev/null; then
-    echo "🔥 Mengatur firewall..."
-    ufw allow 3000
-    ufw allow 3306
-    ufw allow 6379
-fi
+# 🔨 Build dan jalankan container
+echo "🔨 Building dan menjalankan container..."
+docker compose up -d --build
 
-# 🐳 Build dan start database
-echo "🐳 Menjalankan MySQL & Redis..."
-docker compose up mysql redis -d
-
-# ⏳ Tunggu database ready
-echo "⏳ Menunggu database siap..."
-for i in {1..18}; do
-    mysql_status=$(docker compose ps --format '{{.Service}} {{.Status}}' | grep mysql | grep healthy || true)
-    redis_status=$(docker compose ps --format '{{.Service}} {{.Status}}' | grep redis | grep healthy || true)
-
-    if [[ $mysql_status && $redis_status ]]; then
-        echo "✅ MySQL & Redis sehat!"
-        break
-    fi
-    echo "⏳ Waiting for DBs... ($((i*10))s)"
-    sleep 10
-done
-
-# 🚀 Start app
-echo "🚀 Menjalankan aplikasi..."
-docker compose up app -d
-
-# ⏳ Health check aplikasi
-echo "⏳ Menunggu aplikasi sehat..."
-for i in {1..20}; do
-    if curl -s http://localhost:3000/health > /dev/null; then
-        echo "✅ Aplikasi sehat!"
-        break
-    fi
-    echo "⏳ Waiting app... ($((i*15))s)"
-    sleep 15
-done
-
-# 🧪 Verifikasi service
-echo "🧪 Verifikasi MySQL..."
-docker compose exec -T mysql mysqladmin ping -h 127.0.0.1 -u root -prootpassword --silent && echo "✅ MySQL OK" || echo "⚠️ MySQL gagal"
-
-echo "🧪 Verifikasi Redis..."
-docker compose exec -T redis redis-cli ping && echo "✅ Redis OK" || echo "⚠️ Redis gagal"
-
-echo "🧪 Verifikasi aplikasi..."
-curl -s http://localhost:3000/health && echo "✅ App OK" || echo "⚠️ App gagal"
-
-# 🌐 Info network
-LOCAL_IP=$(hostname -I | awk '{print $1}')
-echo
-echo "✅ Deploy Complete!"
-echo "══════════════════════════════════════════════"
-echo "🗄️ MySQL:   $LOCAL_IP:3306"
-echo "📦 Redis:   $LOCAL_IP:6379"
-echo "🌐 App:     $LOCAL_IP:3000"
-echo
-echo "🏠 Main App:      http://$LOCAL_IP:3000"
-echo "❤️  Health Check: http://$LOCAL_IP:3000/health"
-echo "📋 API Docs:      http://$LOCAL_IP:3000/docs"
-echo "🔐 Auth Google:   http://$LOCAL_IP:3000/auth/google"
-echo
-docker compose ps
+echo "🎉 Deploy selesai!"
+echo "📱 Aplikasi berjalan di: http://$(hostname -I | awk '{print $1}'):3000"
+echo "📊 Cek status: docker compose ps"
+echo "📋 Cek logs: docker compose logs -f"
