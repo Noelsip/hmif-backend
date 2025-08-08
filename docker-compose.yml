@@ -28,7 +28,9 @@ services:
     command: redis-server --appendonly yes --bind 0.0.0.0
 
   app:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: hmif-app
     restart: unless-stopped
     depends_on:
@@ -40,19 +42,25 @@ services:
       - .env.docker
     volumes:
       - ./logs:/usr/app/logs
-      - node_modules:/usr/app/node_modules
+      # REMOVE node_modules volume mapping - ini yang menyebabkan masalah!
     networks:
       - hmif-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
 networks:
   hmif-network:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.30.0.0/16  # Changed from 172.20.0.0/16
+        - subnet: 172.30.0.0/16
           gateway: 172.30.0.1
 
 volumes:
   mysql_data:
-  node_modules:
   redis_data:
+  # REMOVE node_modules volume - biarkan di dalam container
