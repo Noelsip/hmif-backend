@@ -15,6 +15,9 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
+          port: 22
+          timeout: 60s
+          command_timeout: 10m
           script: |
             cd ${{ secrets.VPS_PATH }}
             git pull origin main
