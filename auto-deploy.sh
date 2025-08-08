@@ -83,8 +83,17 @@ fi
 echo "🛑 Menghentikan service lama..."
 docker compose down --volumes --remove-orphans 2>/dev/null || true
 
-# 🧹 Bersihkan resource docker
-echo "🧹 Membersihkan resource Docker..."
+# 🧹 Bersihkan resource docker yang conflict
+echo "🧹 Membersihkan Docker networks dan resources..."
+# Remove specific networks that might conflict
+docker network rm hmif-backend_hmif-network 2>/dev/null || true
+docker network rm hmif_network 2>/dev/null || true
+docker network rm hmif-network 2>/dev/null || true
+
+# Clean up unused networks
+docker network prune -f
+
+# Clean up other unused resources
 docker system prune -f
 
 # 🌐 Generate network config jika ada script
