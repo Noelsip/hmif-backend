@@ -10,6 +10,8 @@ const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
 const session = require('express-session');
 const NetworkUtils = require('./utils/network');
+const authRoutes = require('./routes/auth');
+
 
 
 const app = express();
