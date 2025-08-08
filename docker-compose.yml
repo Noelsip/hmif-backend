@@ -37,12 +37,13 @@ services:
       - mysql
       - redis
     ports:
-      - "3000:3000"
+      - "3000:3000"    # HTTP port
+      - "3443:3443"    # HTTPS port 
     env_file:
       - .env.docker
     volumes:
       - ./logs:/usr/app/logs
-      # REMOVE node_modules volume mapping - ini yang menyebabkan masalah!
+      - ./ssl:/usr/app/ssl  # Mount SSL directory 
     networks:
       - hmif-network
     healthcheck:
@@ -63,4 +64,3 @@ networks:
 volumes:
   mysql_data:
   redis_data:
-  # REMOVE node_modules volume - biarkan di dalam container

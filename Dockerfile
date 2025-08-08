@@ -1,10 +1,11 @@
 FROM node:18-alpine
 
-# Install system dependencies
+# Install system dependencies including OpenSSL
 RUN apk add --no-cache \
     curl \
     mysql-client \
     bash \
+    openssl \
     && rm -rf /var/cache/apk/*
 
 WORKDIR /usr/app
@@ -33,11 +34,11 @@ RUN if [ -f "prisma/schema.prisma" ]; then \
         echo "ℹ️ No Prisma schema found, skipping..."; \
     fi
 
-# Create logs directory with proper permissions
-RUN mkdir -p logs && chmod 755 logs
+# Create logs and ssl directories with proper permissions
+RUN mkdir -p logs ssl && chmod 755 logs ssl
 
-# Expose port
-EXPOSE 3000
+# Expose both HTTP and HTTPS ports
+EXPOSE 3000 3443
 
 # Simple health check without external dependency
 HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \

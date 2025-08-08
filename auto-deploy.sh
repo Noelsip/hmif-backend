@@ -84,9 +84,11 @@ if [ ! -f ".env.docker" ]; then
 fi
 
 # 🔐 Generate SSL certificate
+echo "🔐 Checking SSL certificate..."
+mkdir -p ssl
+
 if [ ! -f "ssl/certificate.pem" ] || [ ! -f "ssl/private-key.pem" ]; then
     echo "🔐 Generating SSL certificate for VPS IP: 31.97.51.165..."
-    mkdir -p ssl
     
     # Generate private key
     openssl genrsa -out ssl/private-key.pem 2048
@@ -101,6 +103,16 @@ if [ ! -f "ssl/certificate.pem" ] || [ ! -f "ssl/private-key.pem" ]; then
     echo "✅ SSL certificate generated for IP: 31.97.51.165"
 else
     echo "✅ SSL certificate already exists"
+fi
+
+# Verify SSL files
+if [ -f "ssl/certificate.pem" ] && [ -f "ssl/private-key.pem" ]; then
+    echo "✅ SSL files verified:"
+    echo "   - ssl/private-key.pem ($(stat -c%s ssl/private-key.pem) bytes)"
+    echo "   - ssl/certificate.pem ($(stat -c%s ssl/certificate.pem) bytes)"
+else
+    echo "❌ SSL files missing!"
+    exit 1
 fi
 
 # 🔨 Build dengan no cache untuk memastikan fresh install
@@ -135,7 +147,9 @@ done
 # 📊 Final status
 echo ""
 echo "🎉 Deploy berhasil!"
-echo "📱 Aplikasi: http://$(hostname -I | awk '{print $1}'):3000"
+echo "🔓 HTTP URL: http://$(hostname -I | awk '{print $1}'):3000 (redirects to HTTPS)"
+echo "🔒 HTTPS URL: https://$(hostname -I | awk '{print $1}'):3443"
+echo "📚 Swagger: https://$(hostname -I | awk '{print $1}'):3443/docs-swagger"
 echo "📊 Status: docker compose ps"
 echo "📋 Logs: docker compose logs -f app"
 echo ""
