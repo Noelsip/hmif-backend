@@ -112,7 +112,19 @@ console.log('⚙️ Configuring middleware...');
 // Basic middleware
 app.use(requestIdMiddleware);
 app.use(helmet({
-    contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+            imgSrc: ["'self'", "data:", "https:"],
+            fontSrc: ["'self'"],
+            connectSrc: ["'self'"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+        },
+    },
     crossOriginOpenerPolicy: false,
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginEmbedderPolicy: false,
@@ -271,7 +283,15 @@ try {
 
 // Swagger documentation
 if (swaggerUi && swaggerSpec) {
-    app.use('/docs-swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+    app.use('/docs-swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+        customCss: '.swagger-ui .topbar { display: none }',
+        customSiteTitle: 'HMIF Backend API Documentation',
+        swaggerOptions: {
+            persistAuthorization: true,
+            displayRequestDuration: true,
+            tryItOutEnabled: true
+        }
+    }));
     console.log('✅ Swagger documentation available at /docs-swagger');
 }
 
