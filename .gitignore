@@ -20,7 +20,7 @@ prisma/*.db-journal
 
 # Docker auto-generated files
 docker-auto-env.js
-.env.docker
+# .env.docker
 temp_count.txt
 
 # Backup files
