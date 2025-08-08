@@ -26,10 +26,12 @@ const configurePassport = () => {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: callbackURL
+        callbackURL: callbackURL,
+        scope: ['profile', 'email'],
+        passReqToCallback: true,
     }, async (accessToken, refreshToken, profile, done) => {
         try {
-            console.log('🔍 Raw Google Profile:', {
+            console.log('🔍 Google OAuth Profile received: ', {
                 id: profile.id,
                 emails: profile.emails,
                 displayName: profile.displayName,

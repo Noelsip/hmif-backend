@@ -165,7 +165,8 @@ router.get('/google', (req, res, next) => {
     
     passport.authenticate('google', {
         scope: ['profile', 'email'],
-        prompt: 'select_account'
+        prompt: 'select_account',
+        access_type: 'offline',
     })(req, res, next);
 });
 

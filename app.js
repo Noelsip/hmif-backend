@@ -324,6 +324,29 @@ if (swaggerUi && swaggerSpec) {
     console.log('✅ Swagger documentation available at /docs-swagger');
 }
 
+router.get('/debug/oauth-url', (req, res) => {
+    const config = Environment.getConfig();
+    
+    // Manual construct OAuth URL untuk debug
+    const oauthUrl = `https://accounts.google.com/oauth2/auth?` +
+        `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&` +
+        `scope=${encodeURIComponent('profile email')}&` +
+        `response_type=code&` +
+        `prompt=select_account`;
+    
+    res.json({
+        success: true,
+        message: 'OAuth Debug URL',
+        data: {
+            generatedUrl: oauthUrl,
+            clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
+            callbackUrl: process.env.GOOGLE_CALLBACK_URL,
+            scopeUsed: 'profile email'
+        }
+    });
+});
+
 // Network info endpoint
 app.get('/network-info', (req, res) => {
     const protocol = req.secure ? 'https' : 'http';
