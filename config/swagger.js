@@ -14,7 +14,7 @@ const options = {
             description: 'Complete API documentation for HMIF App Backend - Academic Learning Management System',
             contact: {
                 name: 'HMIF Development Team',
-                email: 'dev@hmif.itk.ac.id'
+                email: '11231072@student.itk.ac.id'
             }
         },
         servers: [
