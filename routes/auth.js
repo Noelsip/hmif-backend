@@ -4,7 +4,6 @@ const jwt = require('jsonwebtoken');
 const { prisma } = require('../config/prisma');
 const Environment = require('../config/environment');
 
-
 /**
  * @swagger
  * tags:
@@ -12,149 +11,10 @@ const Environment = require('../config/environment');
  *   description: User authentication endpoints
  */
 
-/**
- * @swagger
- * /auth/google:
- *   get:
- *     summary: Start Google OAuth authentication
- *     description: Redirect to Google OAuth for authentication
- *     tags: [Authentication]
- *     responses:
- *       302:
- *         description: Redirect to Google OAuth
- */
-
-/**
- * @swagger
- * /auth/google/callback:
- *   get:
- *     summary: Google OAuth callback
- *     description: Handle Google OAuth callback and generate JWT tokens
- *     tags: [Authentication]
- *     responses:
- *       200:
- *         description: Login successful (development mode)
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     accessToken:
- *                       type: string
- *                     refreshToken:
- *                       type: string
- *                     user:
- *                       $ref: '#/components/schemas/User'
- *       302:
- *         description: Redirect to frontend (production mode)
- */
-
-/**
- * @swagger
- * /auth/me:
- *   get:
- *     summary: Get current user information
- *     description: Retrieve information about the currently authenticated user
- *     tags: [Authentication]
- *     security:
- *       - bearerAuth: []
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: User information retrieved successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 data:
- *                   $ref: '#/components/schemas/User'
- *       401:
- *         description: No token provided or invalid token
- *       404:
- *         description: User not found
- */
-
-/**
- * @swagger
- * /auth/refresh:
- *   post:
- *     summary: Refresh access token
- *     description: Generate a new access token using refresh token
- *     tags: [Authentication]
- *     security:
- *       - cookieAuth: []
- *     responses:
- *       200:
- *         description: Token refreshed successfully
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- *                 data:
- *                   type: object
- *                   properties:
- *                     accessToken:
- *                       type: string
- *       401:
- *         description: No refresh token provided or invalid refresh token
- */
-
-/**
- * @swagger
- * /auth/logout:
- *   post:
- *     summary: Logout user
- *     description: Clear authentication cookies and logout user
- *     tags: [Authentication]
- *     responses:
- *       200:
- *         description: Logged out successfully
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ApiResponse'
- */
-
-/**
- * @swagger
- * /auth/failure:
- *   get:
- *     summary: Authentication failure
- *     description: Handle authentication failure
- *     tags: [Authentication]
- *     responses:
- *       401:
- *         description: Authentication failed
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 message:
- *                   type: string
- */
-
 const router = express.Router();
 
-// Google OAuth dengan environment detection
-route.get('/google', (req, res, next) => {
+// ✅ FIX: Google OAuth dengan scope yang benar
+router.get('/google', (req, res, next) => {
     const config = Environment.getConfig();
     
     console.log('🔍 Starting OAuth flow:', {
@@ -163,7 +23,6 @@ route.get('/google', (req, res, next) => {
         userAgent: req.get('User-Agent')?.substring(0, 50),
         clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET'
     });
-    
     
     const authOptions = {
         scope: ['profile', 'email'],
@@ -174,9 +33,11 @@ route.get('/google', (req, res, next) => {
     
     console.log('🔍 OAuth options:', authOptions);
     
+    // ✅ FIX: Panggil passport.authenticate dengan options
+    passport.authenticate('google', authOptions)(req, res, next);
 });
 
-// Enhanced callback dengan smart redirect
+// Google OAuth callback
 router.get('/google/callback',
     passport.authenticate('google', {
         failureRedirect: '/auth/failure',
@@ -231,12 +92,8 @@ router.get('/google/callback',
                 maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
             });
 
-            // Smart redirect berdasarkan environment dan client
-            const userAgent = req.get('User-Agent') || '';
-            const isMobile = /Mobile|Android|iPhone|iPad/.test(userAgent);
-            
+            // Smart redirect berdasarkan environment
             if (config.isDevelopment || req.query.format === 'json') {
-                // Development atau explicit JSON request
                 return res.json({
                     success: true,
                     message: 'Authentication successful',
@@ -256,7 +113,6 @@ router.get('/google/callback',
                     environment: config.environment
                 });
             } else {
-                // Production atau web redirect
                 const redirectUrl = `${config.frontend}/auth/success?token=${encodeURIComponent(accessToken)}`;
                 console.log('🔄 Redirecting to:', redirectUrl);
                 return res.redirect(redirectUrl);
@@ -269,119 +125,23 @@ router.get('/google/callback',
     }
 );
 
-// Mobile/API Auth endpoint
-router.post('/mobile', async (req, res) => {
-    try {
-        const { idToken, platform } = req.body;
-        
-        if (!idToken) {
-            return res.status(400).json({
-                success: false,
-                message: 'ID token is required'
-            });
-        }
-
-        // Verify Google ID Token (implement with google-auth-library)
-        const { OAuth2Client } = require('google-auth-library');
-        const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-        
-        const ticket = await client.verifyIdToken({
-            idToken: idToken,
-            audience: process.env.GOOGLE_CLIENT_ID,
-        });
-        
-        const payload = ticket.getPayload();
-        
-        // Find or create user
-        let user = await prisma.user.findUnique({
-            where: { googleId: payload.sub }
-        });
-
-        if (!user) {
-            const email = payload.email;
-            const nim = email.includes('@student.itk.ac.id') 
-                ? email.split('@')[0] 
-                : null;
-
-            user = await prisma.user.create({
-                data: {
-                    googleId: payload.sub,
-                    email: email,
-                    name: payload.name,
-                    profilePicture: payload.picture,
-                    nim: nim,
-                    isAdmin: false,
-                    isActive: true
-                }
-            });
-        } else {
-            user = await prisma.user.update({
-                where: { id: user.id },
-                data: {
-                    lastLoginAt: new Date(),
-                    profilePicture: payload.picture
-                }
-            });
-        }
-
-        // Generate tokens
-        const accessToken = jwt.sign(
-            { 
-                id: user.id, 
-                email: user.email,
-                isAdmin: user.isAdmin || false
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        );
-
-        const refreshToken = jwt.sign(
-            { id: user.id },
-            process.env.REFRESH_TOKEN_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        res.json({
-            success: true,
-            message: 'Mobile authentication successful',
-            data: {
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    profilePicture: user.profilePicture,
-                    nim: user.nim,
-                    isAdmin: user.isAdmin || false
-                },
-                accessToken,
-                refreshToken,
-                expiresIn: '24h'
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Mobile Auth Error:', error);
-        res.status(401).json({
-            success: false,
-            message: 'Mobile authentication failed',
-            error: error.message
-        });
-    }
-});
-
-// Environment info endpoint
-router.get('/environment', (req, res) => {
-    const config = Environment.getConfig();
+// Debug OAuth URL endpoint
+router.get('/debug/oauth-url', (req, res) => {
+    const oauthUrl = `https://accounts.google.com/oauth2/auth?` +
+        `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
+        `redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&` +
+        `scope=${encodeURIComponent('profile email')}&` +
+        `response_type=code&` +
+        `prompt=select_account`;
     
     res.json({
         success: true,
+        message: 'OAuth Debug URL',
         data: {
-            environment: config.environment,
-            api: config.api,
-            frontend: config.frontend,
-            callback: config.callback,
-            networkInfo: config.networkInfo,
-            corsOrigins: config.corsOrigins
+            generatedUrl: oauthUrl,
+            clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
+            callbackUrl: process.env.GOOGLE_CALLBACK_URL,
+            scopeUsed: 'profile email'
         }
     });
 });
@@ -458,7 +218,6 @@ router.post('/refresh', async (req, res) => {
             });
         }
 
-        // Generate new access token
         const newAccessToken = jwt.sign(
             { 
                 id: user.id, 
