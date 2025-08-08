@@ -8,13 +8,20 @@ require('dotenv').config();
 const configurePassport = () => {
     console.log('🔧 Configuring Passport Google OAuth Strategy...');
     
-    // Determine callback URL based on environment
-    const callbackURL = process.env.NODE_ENV === 'production' 
-        ? process.env.GOOGLE_CALLBACK_URL 
-        : `http://localhost:${process.env.PORT || 3000}/auth/google/callback`;
+    // ✅ FIX: Gunakan GOOGLE_CALLBACK_URL langsung atau fallback
+    const callbackURL = process.env.GOOGLE_CALLBACK_URL || 
+        `https://${process.env.VPS_IP || 'localhost'}:${process.env.HTTPS_PORT || 3443}/auth/google/callback`;
     
     console.log(`   Callback URL: ${callbackURL}`);
     console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   Client ID: ${process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET'}`);
+    console.log(`   Client Secret: ${process.env.GOOGLE_CLIENT_SECRET ? 'SET' : 'NOT SET'}`);
+
+    // ✅ FIX: Validate OAuth credentials
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        console.error('❌ Google OAuth credentials missing!');
+        throw new Error('Google OAuth credentials not configured');
+    }
 
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
@@ -22,34 +29,52 @@ const configurePassport = () => {
         callbackURL: callbackURL
     }, async (accessToken, refreshToken, profile, done) => {
         try {
-            const email = profile.emails[0].value;
-            const googleId = profile.id;
-            const name = profile.displayName;
-            const profilePicture = profile.photos[0]?.value || null;
-
-            console.log('🔍 Google OAuth Profile received:', {
-                id: googleId,
-                email: email,
-                name: name
+            console.log('🔍 Raw Google Profile:', {
+                id: profile.id,
+                emails: profile.emails,
+                displayName: profile.displayName,
+                photos: profile.photos
             });
 
-            // Validate if email is ITK email
-            if (!email.endsWith('@student.itk.ac.id')) {
-                console.log('❌ Non-ITK email rejected:', email);
+            if (!profile.emails || profile.emails.length === 0) {
+                console.error('❌ No email found in Google profile');
                 return done(null, false, {
-                    message: 'Only ITK student email (@student.itk.ac.id) is allowed.'
+                    message: 'No email associated with this Google account'
                 });
             }
 
-            // Extract student number from email
-            const nim = email.split('@')[0];
+            const email = profile.emails[0].value;
+            const googleId = profile.id;
+            const name = profile.displayName;
+            const profilePicture = profile.photos && profile.photos[0] ? profile.photos[0].value : null;
 
-            // Validate nim format (ITK student numbers typically start with specific patterns)
-            if (!nim.match(/^[0-9]{8}$/)) {
-                console.log('❌ Invalid NIM format:', nim);
+            console.log('🔍 Google OAuth Profile processed:', {
+                id: googleId,
+                email: email,
+                name: name,
+                profilePicture: profilePicture ? 'YES' : 'NO'
+            });
+
+            // flexible email validation
+            if (!email.endsWith('@student.itk.ac.id')) {
+                console.log('❌ Email not allowed:', email);
                 return done(null, false, {
-                    message: 'Invalid student number format.'
+                    message: 'Only ITK student email (@student.itk.ac.id) or Gmail for testing is allowed.'
                 });
+            }
+
+            // Extract NIM (only for ITK emails)
+            let nim = null;
+            if (email.endsWith('@student.itk.ac.id')) {
+                nim = email.split('@')[0];
+                
+                // Validate nim format
+                if (!nim.match(/^[0-9]{8}$/)) {
+                    console.log('❌ Invalid NIM format:', nim);
+                    return done(null, false, {
+                        message: 'Invalid student number format.'
+                    });
+                }
             }
 
             // Check if email is in admin list
@@ -58,15 +83,15 @@ const configurePassport = () => {
                 : [];
             const isAdmin = adminEmails.includes(email);
 
-            console.log('🔍 Admin check:', { email, isAdmin, adminEmails: adminEmails.length });
+            console.log('🔍 Admin check:', { email, isAdmin, adminCount: adminEmails.length });
 
-            // Check if user already exists in the database
+            // Check if user already exists
             let existingUser = await prisma.user.findUnique({
                 where: { email: email }
             });
 
             if (existingUser) {
-                // User exists, update Google ID and profile info
+                // Update existing user
                 const updatedUser = await prisma.user.update({
                     where: { id: existingUser.id },
                     data: {
@@ -84,7 +109,7 @@ const configurePassport = () => {
                 return done(null, updatedUser);
             }
 
-            // User does not exist, create a new user
+            // Create new user
             const newUser = await prisma.user.create({
                 data: {
                     email: email,
@@ -107,13 +132,13 @@ const configurePassport = () => {
         }
     }));
 
-    // Serialize user to store in session
+    // Serialize user
     passport.serializeUser((user, done) => {
         console.log('🔄 Serializing user:', user.id);
         done(null, user.id);
     });
 
-    // Deserialize user from session
+    // Deserialize user
     passport.deserializeUser(async (id, done) => {
         try {
             const user = await prisma.user.findUnique({
