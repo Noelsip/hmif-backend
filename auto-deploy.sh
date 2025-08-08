@@ -21,16 +21,12 @@ if [ ! -f ".env" ]; then
         echo "🔧 Membuat .env dari template..."
         cp .env.example .env
         echo "⚠️  Edit file .env dengan konfigurasi yang sesuai!"
-    else
-        echo "❌ Tidak ada file .env! Buat dari .env.example"
-        exit 1
     fi
 fi
 
 # 📝 Buat .env.docker jika tidak ada
 if [ ! -f ".env.docker" ]; then
     echo "🔧 Membuat .env.docker untuk Docker deployment..."
-    # Detect local IP
     LOCAL_IP=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
     
     cat > .env.docker << 'EOF'
@@ -76,7 +72,6 @@ LOG_LEVEL=info
 EOF
     
     echo "✅ File .env.docker dibuat dengan template default"
-    echo "⚠️  PENTING: Edit .env.docker dengan kredensial yang benar sebelum deploy production!"
 fi
 
 # 🛑 Stop service lama
