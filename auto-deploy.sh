@@ -83,6 +83,26 @@ if [ ! -f ".env.docker" ]; then
     exit 1
 fi
 
+# 🔐 Generate SSL certificate
+if [ ! -f "ssl/certificate.pem" ] || [ ! -f "ssl/private-key.pem" ]; then
+    echo "🔐 Generating SSL certificate for VPS IP: 31.97.51.165..."
+    mkdir -p ssl
+    
+    # Generate private key
+    openssl genrsa -out ssl/private-key.pem 2048
+    
+    # Generate certificate dengan IP VPS
+    openssl req -new -x509 -key ssl/private-key.pem -out ssl/certificate.pem -days 365 \
+        -subj "/C=ID/ST=DKI Jakarta/L=Jakarta/O=HMIF/OU=Backend Team/CN=31.97.51.165"
+    
+    chmod 600 ssl/private-key.pem
+    chmod 644 ssl/certificate.pem
+    
+    echo "✅ SSL certificate generated for IP: 31.97.51.165"
+else
+    echo "✅ SSL certificate already exists"
+fi
+
 # 🔨 Build dengan no cache untuk memastikan fresh install
 echo "🔨 Building aplikasi dengan fresh dependencies..."
 docker compose build --no-cache --pull
