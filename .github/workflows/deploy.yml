@@ -8,7 +8,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: 🚀 Deploy to VPS via SSH
@@ -18,8 +18,8 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
           port: 22
-          timeout: 60s
-          command_timeout: 15m
+          timeout: 90s
+          command_timeout: 20m
           script: |
             set -e
             echo "🔄 Starting deployment process..."
@@ -32,6 +32,12 @@ jobs:
             echo "🌿 Current branch: $(git branch --show-current)"
             echo "📝 Last commit: $(git log -1 --oneline)"
             
+            # Check available disk space and memory
+            echo "💾 Disk space:"
+            df -h
+            echo "🧠 Memory usage:"
+            free -h
+            
             # Stash any local changes
             git stash -u 2>/dev/null || true
             
@@ -40,7 +46,7 @@ jobs:
             git fetch origin
             git reset --hard origin/main
             
-            # ✅ CREATE/UPDATE .env.production.local with REAL values
+            # Create/update .env.production.local with REAL values
             echo "📝 Creating/updating .env.production.local with production values..."
             cat > .env.production.local << EOF
             DUCKDNS_DOMAIN=${{ secrets.DUCKDNS_DOMAIN }}
@@ -57,47 +63,79 @@ jobs:
             
             echo "✅ .env.production.local updated with real production values"
             
-            # Validate that secrets are not empty
+            # Validate critical secrets
             if [ -z "${{ secrets.DUCKDNS_DOMAIN }}" ]; then
-                echo "❌ DUCKDNS_DOMAIN secret is not set in GitHub!"
-                echo "💡 Go to Settings > Secrets and variables > Actions"
-                echo "💡 Add DUCKDNS_DOMAIN=yourdomain.duckdns.org"
+                echo "❌ DUCKDNS_DOMAIN secret is not set!"
                 exit 1
             fi
             
             if [ -z "${{ secrets.GOOGLE_CLIENT_ID }}" ]; then
-                echo "❌ GOOGLE_CLIENT_ID secret is not set in GitHub!"
+                echo "❌ GOOGLE_CLIENT_ID secret is not set!"
                 exit 1
             fi
             
             # Make deploy script executable
             chmod +x auto-deploy.sh
             
-            # Run deployment
+            # Run deployment with error handling
             echo "🚀 Running auto-deploy script..."
-            ./auto-deploy.sh
+            ./auto-deploy.sh || {
+                echo "❌ Deployment failed! Checking logs..."
+                echo "📋 Docker compose status:"
+                docker compose ps || true
+                echo "📋 Recent logs:"
+                docker compose logs --tail 50 || true
+                exit 1
+            }
             
             echo "✅ Deployment completed successfully!"
 
-      - name: 🏥 Health Check
+      - name: 🏥 Extended Health Check
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_KEY }}
           port: 22
-          timeout: 30s
+          timeout: 60s
           script: |
-            sleep 15
+            cd ${{ secrets.VPS_PATH }}
+            
+            echo "⏳ Waiting for services to stabilize..."
+            sleep 30
+            
+            # Check container status
+            echo "📋 Container status:"
+            docker compose ps
+            
+            # Test health endpoints
+            echo "🔍 Testing health endpoints..."
+            
+            # HTTP health check
             if curl -f -s http://localhost:3000/health > /dev/null; then
-              echo "✅ Health check passed!"
-              echo "🌐 Application is live!"
+              echo "✅ HTTP health check passed!"
             else
-              echo "❌ Health check failed!"
-              cd ${{ secrets.VPS_PATH }}
-              echo "📋 Container status:"
-              docker compose ps
+              echo "❌ HTTP health check failed!"
               echo "📋 App logs:"
-              docker compose logs --tail 20 app
+              docker compose logs --tail 30 app
               exit 1
             fi
+            
+            # Test database connectivity
+            if docker compose exec mysql mysqladmin ping -u root -prootpassword --silent; then
+              echo "✅ MySQL connectivity test passed!"
+            else
+              echo "❌ MySQL connectivity test failed!"
+              exit 1
+            fi
+            
+            # Test Redis connectivity
+            if docker compose exec redis redis-cli ping | grep -q PONG; then
+              echo "✅ Redis connectivity test passed!"
+            else
+              echo "❌ Redis connectivity test failed!"
+              exit 1
+            fi
+            
+            echo "🎉 All health checks passed!"
+            echo "🌐 Application is live at: https://${{ secrets.DUCKDNS_DOMAIN }}:3443"

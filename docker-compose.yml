@@ -7,7 +7,6 @@ services:
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: hmif_app
       MYSQL_ROOT_HOST: '%'
-      # ✅ Add these for better compatibility
       MYSQL_ALLOW_EMPTY_PASSWORD: 'false'
       MYSQL_RANDOM_ROOT_PASSWORD: 'false'
     ports:
@@ -22,15 +21,19 @@ services:
       --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4 
       --collation-server=utf8mb4_unicode_ci
-      --innodb-buffer-pool-size=256M
-      --max-connections=200
+      --innodb-buffer-pool-size=128M
+      --max-connections=100
       --sql_mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
+      --skip-log-bin
+      --skip-log-error
+      --general-log=0
+      --slow-query-log=0
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 5s
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -prootpassword --silent || exit 1"]
+      interval: 10s
       timeout: 10s
-      retries: 20
-      start_period: 60s
+      retries: 10
+      start_period: 120s
 
   redis:
     image: redis:7-alpine
@@ -45,9 +48,10 @@ services:
     command: redis-server --appendonly yes --bind 0.0.0.0
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
 
   app:
     build: 
@@ -70,7 +74,6 @@ services:
       - ./ssl:/usr/app/ssl
     networks:
       - hmif-network
-    # ✅ Add explicit environment variables
     environment:
       - DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app
       - NODE_ENV=production
@@ -79,15 +82,11 @@ services:
       interval: 30s
       timeout: 15s
       retries: 5
-      start_period: 300s  # Give more time for startup
+      start_period: 360s
 
 networks:
   hmif-network:
     driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.30.0.0/16
 
 volumes:
   mysql_data:
