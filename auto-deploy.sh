@@ -4,60 +4,58 @@ set -e
 echo "🚀 HMIF Backend Auto Deploy with DuckDNS"
 echo "════════════════════════════════════════"
 
-# ✅ Create .env.production.local if not exists dengan PLACEHOLDER values
+# Load production credentials (file harus sudah ada dari GitHub Actions)
 if [ ! -f ".env.production.local" ]; then
-    echo "📝 .env.production.local tidak ditemukan, membuat template..."
-    cat > .env.production.local << 'EOF'
-# GANTI NILAI-NILAI BERIKUT DENGAN YANG SEBENARNYA!
-DUCKDNS_DOMAIN=your-domain.duckdns.org
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-JWT_SECRET=your-jwt-secret-minimum-32-characters
-REFRESH_TOKEN_SECRET=your-refresh-token-secret-minimum-32-characters
-SESSION_SECRET=your-session-secret-minimum-32-characters
-IMAGEKIT_PUBLIC_KEY=your-imagekit-public-key
-IMAGEKIT_PRIVATE_KEY=your-imagekit-private-key
-IMAGEKIT_URL_ENDPOINT=your-imagekit-endpoint
-ADMIN_EMAILS=admin@example.com
-EOF
-    echo "❌ .env.production.local template created!"
-    echo "💡 EDIT FILE INI DENGAN CREDENTIALS YANG BENAR SEBELUM DEPLOY!"
-    echo "💡 File location: $(pwd)/.env.production.local"
+    echo "❌ .env.production.local tidak ditemukan!"
+    echo "💡 File ini seharusnya dibuat oleh GitHub Actions"
+    echo "💡 Atau jalankan manual setup di VPS"
     exit 1
 fi
 
-# Load production credentials
 echo "📥 Loading production credentials..."
 source .env.production.local
 
 # Validate DuckDNS domain
-if [ -z "$DUCKDNS_DOMAIN" ] || [ "$DUCKDNS_DOMAIN" == "your-domain.duckdns.org" ]; then
-    echo "❌ DUCKDNS_DOMAIN belum dikonfigurasi!"
-    echo "💡 Edit .env.production.local dan ganti DUCKDNS_DOMAIN dengan domain Anda"
+if [ -z "$DUCKDNS_DOMAIN" ] || [ "$DUCKDNS_DOMAIN" == "your-domain.duckdns.org" ] || [ "$DUCKDNS_DOMAIN" == "" ]; then
+    echo "❌ DUCKDNS_DOMAIN belum dikonfigurasi dengan benar!"
+    echo "   Current value: '$DUCKDNS_DOMAIN'"
+    echo "💡 Pastikan GitHub secret DUCKDNS_DOMAIN sudah diset"
+    echo "💡 Atau edit manual .env.production.local di VPS"
     exit 1
 fi
 
 # Validate Google OAuth credentials
-if [ -z "$GOOGLE_CLIENT_ID" ] || [ "$GOOGLE_CLIENT_ID" == "your-google-client-id" ]; then
-    echo "❌ GOOGLE_CLIENT_ID belum dikonfigurasi!"
-    echo "💡 Edit .env.production.local dengan Google OAuth credentials yang benar"
+if [ -z "$GOOGLE_CLIENT_ID" ] || [ "$GOOGLE_CLIENT_ID" == "your-google-client-id" ] || [ "$GOOGLE_CLIENT_ID" == "" ]; then
+    echo "❌ GOOGLE_CLIENT_ID belum dikonfigurasi dengan benar!"
+    echo "   Current value: '${GOOGLE_CLIENT_ID:0:20}...'"
+    echo "💡 Pastikan GitHub secret GOOGLE_CLIENT_ID sudah diset"
     exit 1
 fi
 
-if [ -z "$GOOGLE_CLIENT_SECRET" ] || [ "$GOOGLE_CLIENT_SECRET" == "your-google-client-secret" ]; then
-    echo "❌ GOOGLE_CLIENT_SECRET belum dikonfigurasi!"
-    echo "💡 Edit .env.production.local dengan Google OAuth credentials yang benar"
+if [ -z "$GOOGLE_CLIENT_SECRET" ] || [ "$GOOGLE_CLIENT_SECRET" == "your-google-client-secret" ] || [ "$GOOGLE_CLIENT_SECRET" == "" ]; then
+    echo "❌ GOOGLE_CLIENT_SECRET belum dikonfigurasi dengan benar!"
+    echo "💡 Pastikan GitHub secret GOOGLE_CLIENT_SECRET sudah diset"
+    exit 1
+fi
+
+# Validate JWT secrets
+if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" == "your-jwt-secret-minimum-32-characters" ] || [ "$JWT_SECRET" == "" ]; then
+    echo "❌ JWT_SECRET belum dikonfigurasi dengan benar!"
+    echo "💡 Pastikan GitHub secret JWT_SECRET sudah diset"
     exit 1
 fi
 
 echo "🌐 DuckDNS Domain: $DUCKDNS_DOMAIN"
 echo "🔐 Google OAuth Client ID: ${GOOGLE_CLIENT_ID:0:20}..."
+echo "🔑 JWT Secret: ${JWT_SECRET:0:10}... (${#JWT_SECRET} characters)"
 
-# Validate JWT secrets
-if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" == "your-jwt-secret-minimum-32-characters" ]; then
-    echo "❌ JWT_SECRET belum dikonfigurasi!"
-    exit 1
-fi
+# ✅ Show loaded environment for debugging
+echo "📋 Environment validation:"
+echo "   DUCKDNS_DOMAIN: $DUCKDNS_DOMAIN"
+echo "   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:0:30}..."
+echo "   JWT_SECRET length: ${#JWT_SECRET}"
+echo "   SESSION_SECRET length: ${#SESSION_SECRET}"
+echo "   ADMIN_EMAILS: ${ADMIN_EMAILS}"
 
 # Docker cleanup
 echo "🧹 Cleaning up containers..."
@@ -78,6 +76,8 @@ if [ ! -f "ssl/certificate.pem" ] || [ ! -f "ssl/private-key.pem" ]; then
     
     chmod 600 ssl/private-key.pem ssl/certificate.pem
     echo "✅ SSL certificate generated"
+else
+    echo "✅ SSL certificate already exists"
 fi
 
 # Create .env.docker dengan DuckDNS configuration
@@ -132,30 +132,36 @@ ADMIN_EMAILS=${ADMIN_EMAILS}
 LOG_LEVEL=info
 EOF
 
-echo "✅ .env.docker created dengan DuckDNS configuration"
+echo "✅ .env.docker created with DuckDNS configuration"
 
 # Build and deploy
-echo "🔨 Building dan deploying aplikasi..."
+echo "🔨 Building and deploying application..."
 docker compose build --no-cache
 docker compose up -d
 
 # Health check
-echo "⏳ Waiting for services..."
-sleep 20
+echo "⏳ Waiting for services to start..."
+sleep 30
 
 echo "🏥 Health check..."
-for i in {1..15}; do
+for i in {1..20}; do
     if curl -f -s http://localhost:3000/health > /dev/null; then
         echo "✅ Health check passed!"
         break
-    elif [ $i -eq 15 ]; then
-        echo "❌ Health check failed"
-        echo "📋 Container logs:"
+    elif [ $i -eq 20 ]; then
+        echo "❌ Health check failed after 20 attempts"
+        echo "📋 Container status:"
+        docker compose ps
+        echo "📋 App logs:"
         docker compose logs --tail 50 app
+        echo "📋 MySQL logs:"
+        docker compose logs --tail 20 mysql
+        echo "📋 Redis logs:"
+        docker compose logs --tail 10 redis
         exit 1
     else
-        echo "⏳ Health check... ($i/15)"
-        sleep 10
+        echo "⏳ Health check attempt $i/20..."
+        sleep 15
     fi
 done
 
@@ -178,4 +184,5 @@ echo "   1. DuckDNS domain: $DUCKDNS_DOMAIN resolves to your VPS IP"
 echo "   2. Google Console authorized redirect URI: $CALLBACK_URL"
 echo "   3. Accept SSL certificate in browser (self-signed)"
 echo ""
+echo "📊 Final container status:"
 docker compose ps
