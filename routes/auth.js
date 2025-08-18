@@ -13,6 +13,24 @@ const Environment = require('../config/environment');
 
 const router = express.Router();
 
+/**
+ * @swagger
+ * /auth/google:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Initiate Google OAuth
+ *     description: Redirects user to Google OAuth consent screen
+ *     responses:
+ *       302:
+ *         description: Redirect to Google OAuth
+ *       500:
+ *         description: OAuth configuration error
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ */
+
 router.get('/google', (req, res, next) => {
     try {
         const config = Environment.getConfig();
@@ -188,6 +206,35 @@ router.get('/google/callback',
     }
 );
 
+/**
+ * @swagger
+ * /auth/success:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get authentication success status
+ *     description: Returns user information after successful authentication
+ *     parameters:
+ *       - in: query
+ *         name: token
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: JWT token from OAuth callback
+ *     responses:
+ *       200:
+ *         description: Authentication successful
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AuthResponse'
+ *       400:
+ *         description: No token provided
+ *       401:
+ *         description: Invalid token
+ *       404:
+ *         description: User not found
+ */
+
 router.get('/success', async (req, res) => {
     try {
         const config = Environment.getConfig();
@@ -294,6 +341,33 @@ router.get('/debug/oauth-config', (req, res) => {
         });
     }
 });
+
+/**
+ * @swagger
+ * /auth/me:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Get current user
+ *     description: Returns current authenticated user information
+ *     security:
+ *       - bearerAuth: []
+ *       - cookieAuth: []
+ *     responses:
+ *       200:
+ *         description: User information retrieved
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   $ref: '#/components/schemas/User'
+ *       401:
+ *         description: No token provided or invalid token
+ */
 
 // Enhanced get current user
 router.get('/me', async (req, res) => {
@@ -404,6 +478,29 @@ router.post('/refresh', async (req, res) => {
         });
     }
 });
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Logout user
+ *     description: Clears authentication cookies
+ *     responses:
+ *       200:
+ *         description: Successfully logged out
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: Logged out successfully
+ */
 
 // Logout endpoint
 router.post('/logout', (req, res) => {

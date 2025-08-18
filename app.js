@@ -112,10 +112,22 @@ try {
     swaggerUi = swaggerConfig.swaggerUi;
     swaggerSpec = swaggerConfig.swaggerSpec;
     swaggerUiOptions = swaggerConfig.swaggerUiOptions;
+    
+    // Debug logging
     console.log('✅ Swagger loaded successfully');
+    console.log('   - swaggerUi:', !!swaggerUi);
+    console.log('   - swaggerSpec:', !!swaggerSpec);
+    console.log('   - swaggerUiOptions:', !!swaggerUiOptions);
+    
+    if (!swaggerSpec) {
+        throw new Error('Swagger spec is null');
+    }
+    
 } catch (error) {
     console.error('❌ Failed to load Swagger:', error.message);
+    console.error('   - Stack:', error.stack);
     swaggerUi = null;
+    swaggerSpec = null;
 }
 
 // Load Passport
@@ -312,16 +324,33 @@ try {
 
 // Swagger documentation
 if (swaggerUi && swaggerSpec) {
-    app.use('/docs-swagger', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
-        customCss: '.swagger-ui .topbar { display: none }',
-        customSiteTitle: 'HMIF Backend API Documentation',
-        swaggerOptions: {
-            persistAuthorization: true,
-            displayRequestDuration: true,
-            tryItOutEnabled: true
-        }
-    }));
-    console.log('✅ Swagger documentation available at /docs-swagger');
+    try {
+        app.use('/docs-swagger', swaggerUi.serve);
+        app.get('/docs-swagger', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+        console.log('✅ Swagger documentation available at /docs-swagger');
+    } catch (error) {
+        console.error('❌ Failed to setup Swagger UI:', error.message);
+    }
+} else {
+    console.warn('⚠️ Swagger not configured:');
+    console.warn('   - swaggerUi:', !!swaggerUi);
+    console.warn('   - swaggerSpec:', !!swaggerSpec);
+    console.warn('   - Check dependencies and configuration');
+    
+    // Create fallback endpoint
+    app.get('/docs-swagger', (req, res) => {
+        res.json({
+            success: false,
+            message: 'Swagger documentation not available',
+            error: 'Swagger configuration failed to load',
+            troubleshooting: [
+                'Check if swagger-jsdoc and swagger-ui-express are installed',
+                'Verify ./config/swagger.js file exists',
+                'Check ./utils/network.js implementation',
+                'Run: npm install swagger-jsdoc swagger-ui-express'
+            ]
+        });
+    });
 }
 
 // Network info endpoint
