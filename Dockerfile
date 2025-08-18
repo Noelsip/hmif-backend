@@ -33,6 +33,19 @@ set -e
 echo "🚀 HMIF Backend Startup (Enhanced Database Migration)"
 echo "===================================================="
 
+# Check dependencies
+echo "🔍 Checking Swagger dependencies..."
+node -e "
+try {
+  require('swagger-jsdoc');
+  require('swagger-ui-express');
+  console.log('✅ Swagger dependencies OK');
+} catch(e) {
+  console.error('❌ Missing swagger dependencies:', e.message);
+  process.exit(1);
+}
+"
+
 # MariaDB client connecting to MySQL server
 check_mysql() {
     local attempt=1

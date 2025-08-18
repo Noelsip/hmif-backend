@@ -1,24 +1,37 @@
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 
-// Safe network info loading
-let networkInfo = { ip: 'localhost' };
+console.log('🔧 Initializing Swagger configuration...');
+
+// Safe network info loading with fallback
+let networkInfo = { ip: '127.0.0.1' };
 try {
     const NetworkUtils = require('../utils/network');
     networkInfo = NetworkUtils.getNetworkInfo();
+    console.log('✅ Network utils loaded:', networkInfo.ip);
 } catch (error) {
-    console.warn('NetworkUtils not available, using localhost');
+    console.warn('⚠️  NetworkUtils not available, using localhost');
+    console.warn('   Error:', error.message);
 }
 
 const PORT = process.env.PORT || 3000;
+const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 
-const options = {
+// Use environment-based server URLs
+const isDevelopment = process.env.NODE_ENV !== 'production';
+const baseUrl = isDevelopment 
+    ? `http://localhost:${PORT}`
+    : `https://${networkInfo.ip}:${HTTPS_PORT}`;
+
+console.log(`🌐 Swagger server URL: ${baseUrl}`);
+
+const swaggerOptions = {
     definition: {
         openapi: '3.0.0',
         info: {
             title: 'HMIF Backend API',
             version: '1.0.0',
-            description: 'Complete API documentation for HMIF App Backend - Academic Learning Management System',
+            description: 'Complete API documentation for HMIF App Backend',
             contact: {
                 name: 'HMIF Development Team',
                 email: '11231072@student.itk.ac.id'
@@ -26,12 +39,8 @@ const options = {
         },
         servers: [
             {
-                url: `http://localhost:${PORT}`,
-                description: 'Local development server'
-            },
-            {
-                url: `http://${networkInfo.ip}:${PORT}`,
-                description: 'Network server'
+                url: baseUrl,
+                description: isDevelopment ? 'Development server' : 'Production server'
             }
         ],
         components: {
@@ -55,12 +64,12 @@ const options = {
                         googleId: { type: 'string', example: '1234567890' },
                         email: { type: 'string', format: 'email', example: '11231072@student.itk.ac.id' },
                         name: { type: 'string', example: 'John Doe' },
-                        profilePicture: { type: 'string', format: 'uri', example: 'https://example.com/avatar.jpg' }, // Fixed field name
+                        profilePicture: { type: 'string', format: 'uri', example: 'https://example.com/avatar.jpg' },
                         nim: { type: 'string', example: '11231072' },
                         role: { type: 'string', enum: ['USER', 'ADMIN'], example: 'USER' },
-                        isAdmin: { type: 'boolean', example: false }, // Added isAdmin field
+                        isAdmin: { type: 'boolean', example: false },
                         isActive: { type: 'boolean', example: true },
-                        lastLoginAt: { type: 'string', format: 'date-time' }, // Fixed field name
+                        lastLoginAt: { type: 'string', format: 'date-time' },
                         createdAt: { type: 'string', format: 'date-time' },
                         updatedAt: { type: 'string', format: 'date-time' }
                     }
@@ -95,15 +104,25 @@ const options = {
             { cookieAuth: [] }
         ]
     },
-    apis: ['./routes/*.js', './app.js'],
+    apis: ['./routes/*.js', './app.js']
 };
 
-let swaggerSpec;
+let swaggerSpec = null;
 try {
-    swaggerSpec = swaggerJsdoc(options);
+    console.log('📝 Generating Swagger spec...');
+    swaggerSpec = swaggerJsdoc(swaggerOptions);
+    
+    if (!swaggerSpec || !swaggerSpec.openapi) {
+        throw new Error('Generated swagger spec is invalid');
+    }
+    
     console.log('✅ Swagger spec generated successfully');
+    console.log(`   Title: ${swaggerSpec.info?.title}`);
+    console.log(`   Version: ${swaggerSpec.info?.version}`);
+    console.log(`   Servers: ${swaggerSpec.servers?.length || 0}`);
 } catch (error) {
     console.error('❌ Failed to generate Swagger spec:', error.message);
+    console.error('   Stack:', error.stack);
     swaggerSpec = null;
 }
 
@@ -113,12 +132,22 @@ const swaggerUiOptions = {
     swaggerOptions: {
         persistAuthorization: true,
         displayRequestDuration: true,
-        tryItOutEnabled: true
+        tryItOutEnabled: true,
+        filter: true,
+        displayOperationId: false
     }
 };
 
-module.exports = {
+// Validate exports
+const exports = {
     swaggerUi,
     swaggerSpec,
     swaggerUiOptions
 };
+
+console.log('📦 Swagger module exports:');
+console.log('   - swaggerUi:', !!exports.swaggerUi);
+console.log('   - swaggerSpec:', !!exports.swaggerSpec);
+console.log('   - swaggerUiOptions:', !!exports.swaggerUiOptions);
+
+module.exports = exports;
