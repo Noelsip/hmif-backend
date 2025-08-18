@@ -25,8 +25,8 @@ RUN npx prisma generate
 # Create required directories
 RUN mkdir -p logs ssl && chmod 755 logs ssl
 
-# ✅ MariaDB client dengan parameter yang benar untuk MySQL server
-RUN cat > /usr/app/startup.sh << 'EOF'
+# ✅ Fixed startup script dengan proper heredoc syntax
+RUN cat > /usr/app/startup.sh << 'STARTUP_SCRIPT'
 #!/bin/bash
 set -e
 
@@ -74,17 +74,22 @@ check_mysql() {
 ensure_database() {
     echo "🔧 Setting up database (MariaDB client → MySQL server)..."
     
-    # ✅ Use MariaDB client parameters
-    mysql -h mysql -u root -prootpassword --skip-ssl --skip-ssl-verify-server-cert << 'SQL' || \
-    mysql -h mysql -u root -prootpassword << 'SQL'
-CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    # ✅ Fixed heredoc syntax - menggunakan variable untuk SQL commands
+    local sql_commands="CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE hmif_app;
 SELECT 'Database hmif_app ready!' as status;
 GRANT ALL PRIVILEGES ON hmif_app.* TO 'root'@'%';
-FLUSH PRIVILEGES;
-SQL
+FLUSH PRIVILEGES;"
     
-    echo "✅ Database setup completed"
+    # Try with SSL parameters first, then fallback
+    if mysql -h mysql -u root -prootpassword --skip-ssl --skip-ssl-verify-server-cert -e "$sql_commands" 2>/dev/null; then
+        echo "✅ Database setup completed (SSL disabled)"
+    elif mysql -h mysql -u root -prootpassword -e "$sql_commands" 2>/dev/null; then
+        echo "✅ Database setup completed (fallback method)"
+    else
+        echo "❌ Database setup failed"
+        return 1
+    fi
 }
 
 # Prisma migration
@@ -126,7 +131,7 @@ else
     echo "❌ Service checks failed"
     exit 1
 fi
-EOF
+STARTUP_SCRIPT
 
 # Make startup script executable
 RUN chmod +x /usr/app/startup.sh

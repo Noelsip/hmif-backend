@@ -50,7 +50,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 30s
+      start_period: 10s
 
   app:
     build: 
@@ -79,7 +79,7 @@ services:
       - NODE_ENV=production
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
-      interval: 30s
+      interval: 10s
       timeout: 15s
       retries: 5
       start_period: 180s
