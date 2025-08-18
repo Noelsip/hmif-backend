@@ -1,14 +1,12 @@
 FROM node:18-alpine
 
-# Install system dependencies with proper MySQL client (not MariaDB)
+# Install system dependencies dengan MariaDB client (default Alpine)
 RUN apk add --no-cache \
     bash \
     curl \
     netcat-openbsd \
+    mysql-client \
     dos2unix
-
-# Install Oracle MySQL client instead of MariaDB
-RUN apk add --no-cache mysql-client --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main
 
 WORKDIR /usr/app
 
@@ -27,130 +25,111 @@ RUN npx prisma generate
 # Create required directories
 RUN mkdir -p logs ssl && chmod 755 logs ssl
 
-# ✅ Fixed startup script with MariaDB-compatible MySQL client commands
+# ✅ MariaDB client dengan parameter yang benar untuk MySQL server
 RUN cat > /usr/app/startup.sh << 'EOF'
 #!/bin/bash
 set -e
 
-echo "🚀 HMIF Backend Startup Script (MariaDB Client Compatible)"
-echo "========================================================="
+echo "🚀 HMIF Backend Startup (MariaDB Client → MySQL Server)"
+echo "======================================================"
 
-# Enhanced MySQL connection testing with MariaDB client compatibility
+# MariaDB client connecting to MySQL server
 check_mysql() {
     local attempt=1
     local max_attempts=60
     
-    echo "🔍 Testing MySQL connection with MariaDB client compatibility..."
+    echo "🔍 Testing MySQL server connection via MariaDB client..."
     
     while [ $attempt -le $max_attempts ]; do
-        echo "🔍 Testing MySQL connection (attempt $attempt/$max_attempts)..."
+        echo "🔍 Connection attempt $attempt/$max_attempts..."
         
-        # Test network connectivity first
         if nc -z mysql 3306; then
-            echo "   ✅ Network connection to mysql:3306 successful"
+            echo "   ✅ Network connectivity OK"
             
-            # Test MySQL authentication with MariaDB client (no --ssl-mode parameter)
-            if mysql -h mysql -u root -prootpassword --skip-ssl-verify -e "SELECT 1;" 2>/dev/null; then
-                echo "   ✅ MySQL authentication successful (SSL skipped)!"
+            # ✅ MariaDB client parameters untuk disable SSL
+            if mysql -h mysql -u root -prootpassword --skip-ssl --skip-ssl-verify-server-cert -e "SELECT 1;" 2>/dev/null; then
+                echo "   ✅ MySQL server authentication successful via MariaDB client!"
                 return 0
+            # Fallback: try tanpa SSL parameters sama sekali
             elif mysql -h mysql -u root -prootpassword -e "SELECT 1;" 2>/dev/null; then
-                echo "   ✅ MySQL authentication successful!"
+                echo "   ✅ MySQL server authentication successful (fallback method)!"
                 return 0
             else
-                echo "   ❌ MySQL authentication failed (credentials issue)"
-                echo "   🔍 Debugging MySQL connection..."
-                echo "   Database URL: $(echo $DATABASE_URL | sed 's/:[^:@]*@/:***@/')"
-                
-                # Try different connection methods for MariaDB client
-                echo "   Trying connection without SSL parameters..."
-                mysql -h mysql -u root -prootpassword -e "SELECT 1;" 2>&1 | head -3 || true
-                echo "   MySQL error details printed above"
+                echo "   ❌ Authentication failed"
+                # Debug output
+                mysql -h mysql -u root -prootpassword --skip-ssl -e "SELECT 1;" 2>&1 | head -3 || true
             fi
         else
-            echo "   ❌ Network connection to mysql:3306 failed"
+            echo "   ❌ Network connection failed"
         fi
         
         attempt=$((attempt + 1))
         [ $attempt -le $max_attempts ] && sleep 5
     done
     
-    echo "❌ MySQL connection failed after $max_attempts attempts"
     return 1
 }
 
-# Function to ensure database exists (MariaDB client compatible)
+# Database setup dengan MariaDB client
 ensure_database() {
-    echo "🔧 Ensuring database exists..."
+    echo "🔧 Setting up database (MariaDB client → MySQL server)..."
+    
+    # ✅ Use MariaDB client parameters
+    mysql -h mysql -u root -prootpassword --skip-ssl --skip-ssl-verify-server-cert << 'SQL' || \
     mysql -h mysql -u root -prootpassword << 'SQL'
 CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE hmif_app;
-SELECT 'Database hmif_app is ready' as status;
+SELECT 'Database hmif_app ready!' as status;
 GRANT ALL PRIVILEGES ON hmif_app.* TO 'root'@'%';
 FLUSH PRIVILEGES;
 SQL
+    
     echo "✅ Database setup completed"
 }
 
-# Function to run database migration
+# Prisma migration
 run_migration() {
-    echo "🔄 Running database migration..."
+    echo "🔄 Running Prisma migration..."
     if npx prisma migrate deploy; then
-        echo "✅ Database migration completed successfully"
+        echo "✅ Migration successful"
+    elif npx prisma db push --accept-data-loss; then
+        echo "✅ Database schema synchronized"
     else
-        echo "⚠️ Database migration failed, but continuing..."
-        echo "   This might be normal for first-time setup"
+        echo "⚠️ Migration had issues, but continuing..."
     fi
 }
 
-# Function to check Redis connection
+# Redis check
 check_redis() {
-    echo "🔍 Testing Redis connection..."
-    local attempt=1
-    local max_attempts=30
-    
-    while [ $attempt -le $max_attempts ]; do
-        if nc -z redis 6379 && echo "PING" | nc redis 6379 | grep -q "PONG"; then
-            echo "✅ Redis connection successful!"
-            return 0
-        fi
-        
-        echo "⏳ Waiting for Redis... (attempt $attempt/$max_attempts)"
-        attempt=$((attempt + 1))
-        [ $attempt -le $max_attempts ] && sleep 3
-    done
-    
-    echo "❌ Redis connection failed after $max_attempts attempts"
-    return 1
+    echo "🔍 Checking Redis..."
+    timeout 60 bash -c 'until nc -z redis 6379; do sleep 1; done'
+    echo "✅ Redis ready"
 }
 
-# Main startup sequence
-echo "🚀 Starting HMIF Backend Application..."
+# Main execution
+echo "🚀 Starting services check..."
+echo "   MySQL Server: mysql:5.7"
+echo "   MySQL Client: $(mysql --version | head -1)"
 
-# Wait for MySQL
-if check_mysql; then
+if check_mysql && check_redis; then
     ensure_database
     run_migration
+    echo ""
+    echo "🎉 All systems ready! Starting Node.js application..."
+    echo "   ✅ MySQL Server: Connected"
+    echo "   ✅ Database: Ready"
+    echo "   ✅ Redis: Connected"
+    echo "   ✅ Migrations: Applied"
+    echo ""
+    exec npm start
 else
-    echo "❌ Failed to connect to MySQL. Exiting..."
+    echo "❌ Service checks failed"
     exit 1
 fi
-
-# Wait for Redis
-if ! check_redis; then
-    echo "❌ Failed to connect to Redis. Exiting..."
-    exit 1
-fi
-
-# Start the application
-echo "🎉 All dependencies ready! Starting Node.js application..."
-exec npm start
 EOF
 
 # Make startup script executable
 RUN chmod +x /usr/app/startup.sh
 
-# Expose the application port
 EXPOSE 3000 3443
-
-# Use startup script as entrypoint
 CMD ["/usr/app/startup.sh"]

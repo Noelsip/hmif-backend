@@ -15,6 +15,7 @@ services:
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - hmif-network
+    # ✅ MySQL server optimized untuk MariaDB client
     command: >
       --bind-address=0.0.0.0 
       --character-set-server=utf8mb4 
@@ -22,10 +23,10 @@ services:
       --innodb-buffer-pool-size=128M
       --max-connections=100
       --sql_mode=STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION
-      --general-log=0
-      --slow-query-log=0
       --skip-ssl
+      --ssl=0
       --default-authentication-plugin=mysql_native_password
+      --skip-name-resolve
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -prootpassword --silent || exit 1"]
       interval: 15s
@@ -73,7 +74,8 @@ services:
     networks:
       - hmif-network
     environment:
-      - DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app?sslmode=disable&ssl=false&allowPublicKeyRetrieval=true
+      # ✅ Enhanced connection string untuk MariaDB client
+      - DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app?ssl=false&sslmode=DISABLED&allowPublicKeyRetrieval=true&useSSL=false&requireSSL=false&verifyServerCertificate=false
       - NODE_ENV=production
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
