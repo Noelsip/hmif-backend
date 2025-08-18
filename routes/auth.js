@@ -188,6 +188,27 @@ router.get('/google/callback',
     }
 );
 
+router.get('/success', (req, res) => {
+    const config = Environment.getConfig();
+    const token = req.query.token;
+    if (!token) {
+        return res.status(400).json({
+            success: false,
+            message: 'No token provided'
+        });
+    }
+    console.log('🔍 OAuth Success Redirect:',  {
+        message: 'User successfully authenticated',
+        user: req.user ? { id: req.user.id, email: req.user.email } : null,
+        requestId: req.requestId,
+        token: token.substring(0, 20) + '...',
+        frontendUrl: config.frontend,
+        timestamp: new Date().toISOString()
+    });
+    res.redirect(`${config.frontend}/auth/success?token=${encodeURIComponent(token)}`);
+    
+});
+
 // Enhanced debug endpoint
 router.get('/debug/oauth-config', (req, res) => {
     try {
