@@ -1,239 +1,131 @@
 #!/bin/bash
 set -e
 
-echo "🚀 HMIF Backend Auto Deploy"
-echo "══════════════════════════════"
+echo "🚀 HMIF Backend Auto Deploy with DuckDNS"
+echo "════════════════════════════════════════"
 
-# 🔍 Cek Docker dan Docker Compose
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker tidak ditemukan! Install Docker terlebih dahulu."
+# Load production credentials
+if [ ! -f ".env.production.local" ]; then
+    echo "❌ .env.production.local tidak ditemukan!"
     exit 1
 fi
 
-if ! docker compose version &> /dev/null; then
-    echo "❌ Docker Compose tidak ditemukan! Pastikan versi Docker mendukung compose plugin."
+source .env.production.local
+
+# Validate DuckDNS domain
+if [ -z "$DUCKDNS_DOMAIN" ]; then
+    echo "❌ DUCKDNS_DOMAIN tidak ditemukan!"
+    echo "💡 Tambahkan DUCKDNS_DOMAIN=yourdomain.duckdns.org ke .env.production.local"
     exit 1
 fi
 
-# 📝 Validate package.json
-if ! node -e "JSON.parse(require('fs').readFileSync('package.json'))" 2>/dev/null; then
-    echo "❌ package.json tidak valid atau tidak ditemukan!"
-    exit 1
-fi
+echo "🌐 DuckDNS Domain: $DUCKDNS_DOMAIN"
 
-# 🧹 Complete cleanup
-echo "🧹 Melakukan pembersihan menyeluruh..."
+# Docker cleanup
+echo "🧹 Cleaning up containers..."
 docker compose down --volumes --remove-orphans 2>/dev/null || true
-
-# Remove any conflicting networks
-docker network rm hmif-backend_hmif-network 2>/dev/null || true
-docker network rm hmif_network 2>/dev/null || true
-docker network rm hmif-network 2>/dev/null || true
-
-# Clean up unused resources
 docker system prune -f
-docker volume prune -f
 
-# 🌐 Update network configuration
-echo "🌐 Mengkonfigurasi network..."
-if [ ! -f "docker-auto-env.js" ]; then
-    cat > docker-auto-env.js << 'EOF'
-const os = require('os');
-const fs = require('fs');
-
-// Get network interfaces
-const interfaces = os.networkInterfaces();
-let hostIP = 'localhost';
-
-// Find the first non-internal IPv4 address
-for (const name of Object.keys(interfaces)) {
-    for (const iface of interfaces[name]) {
-        if (iface.family === 'IPv4' && !iface.internal) {
-            hostIP = iface.address;
-            break;
-        }
-    }
-    if (hostIP !== 'localhost') break;
-}
-
-console.log('🌐 Detected IP:', hostIP);
-
-// Update .env.docker if exists
-if (fs.existsSync('.env.docker')) {
-    let envContent = fs.readFileSync('.env.docker', 'utf8');
-    
-    // Update IP-related configurations
-    envContent = envContent.replace(/HOST_IP=.*/g, `HOST_IP=${hostIP}`);
-    envContent = envContent.replace(/EXTERNAL_URL=.*/g, `EXTERNAL_URL=http://${hostIP}:3000`);
-    envContent = envContent.replace(/FRONTEND_URL=.*/g, `FRONTEND_URL=http://${hostIP}:3000`);
-    envContent = envContent.replace(/GOOGLE_CALLBACK_URL=http:\/\/[^\/]+:3000/g, `GOOGLE_CALLBACK_URL=http://${hostIP}:3000`);
-    envContent = envContent.replace(/SWAGGER_HOST=.*/g, `SWAGGER_HOST=${hostIP}`);
-    
-    fs.writeFileSync('.env.docker', envContent);
-    console.log('✅ Updated .env.docker with IP:', hostIP);
-}
-EOF
-fi
-
-node docker-auto-env.js
-
-# 📋 Validate .env.docker
-if [ ! -f ".env.docker" ]; then
-    echo "❌ .env.docker tidak ditemukan!"
-    exit 1
-fi
-
-# 🔐 Generate SSL certificate
-echo "🔐 Checking SSL certificate..."
+# Generate SSL certificate dengan DuckDNS domain
+echo "🔐 Setting up SSL for DuckDNS domain..."
 mkdir -p ssl
 
 if [ ! -f "ssl/certificate.pem" ] || [ ! -f "ssl/private-key.pem" ]; then
-    echo "🔐 Generating SSL certificate for VPS IP: 31.97.51.165..."
+    echo "🔐 Generating SSL certificate for: $DUCKDNS_DOMAIN"
     
-    # Generate private key
     openssl genrsa -out ssl/private-key.pem 2048
-    
-    # Generate certificate dengan IP VPS
     openssl req -new -x509 -key ssl/private-key.pem -out ssl/certificate.pem -days 365 \
-        -subj "/C=ID/ST=DKI Jakarta/L=Jakarta/O=HMIF/OU=Backend Team/CN=31.97.51.165"
+        -subj "/C=ID/ST=Jakarta/L=Jakarta/O=HMIF/CN=$DUCKDNS_DOMAIN" \
+        -addext "subjectAltName=DNS:$DUCKDNS_DOMAIN,DNS:*.duckdns.org"
     
-    chmod 600 ssl/private-key.pem
-    chmod 644 ssl/certificate.pem
-    
-    echo "✅ SSL certificate generated for IP: 31.97.51.165"
-else
-    echo "✅ SSL certificate already exists"
+    chmod 600 ssl/private-key.pem ssl/certificate.pem
+    echo "✅ SSL certificate generated"
 fi
 
-# Verify SSL files
-if [ -f "ssl/certificate.pem" ] && [ -f "ssl/private-key.pem" ]; then
-    echo "✅ SSL files verified:"
-    echo "   - ssl/private-key.pem ($(stat -c%s ssl/private-key.pem) bytes)"
-    echo "   - ssl/certificate.pem ($(stat -c%s ssl/certificate.pem) bytes)"
-else
-    echo "❌ SSL files missing!"
-    exit 1
-fi
+# Create .env.docker dengan DuckDNS configuration
+echo "📝 Creating Docker environment with DuckDNS..."
 
-# 📝 Create .env.docker with safe template
-echo "📝 Creating .env.docker configuration..."
-
-# Check if production credentials exist
-if [ ! -f ".env.production.local" ]; then
-    echo "❌ .env.production.local tidak ditemukan!"
-    echo "💡 Buat file .env.production.local dengan credentials production"
-    echo "   Contoh:"
-    echo "   GOOGLE_CLIENT_ID=your_client_id"
-    echo "   GOOGLE_CLIENT_SECRET=your_client_secret"
-    echo "   JWT_SECRET=your_jwt_secret"
-    echo "   ..."
-    exit 1
-fi
-
-# Load production credentials
-echo "🔐 Loading production credentials..."
-source .env.production.local
-
-# Create .env.docker dengan credentials dari file terpisah
 cat > .env.docker << EOF
-# Docker Production Environment - Generated by auto-deploy.sh
-# Server Configuration
+# Docker Production Environment - DuckDNS
 PORT=3000
 NODE_ENV=production
 
-# VPS Configuration
+# DuckDNS Configuration
+DUCKDNS_DOMAIN=${DUCKDNS_DOMAIN}
+
+# VPS Configuration (fallback)
 VPS_IP=31.97.51.165
 HOST_IP=31.97.51.165
-NETWORK_SUBNET=31.97.51
 SERVER_HOST=0.0.0.0
 
-# SSL Configuration - ENABLE HTTPS
+# SSL Configuration
 SSL_ENABLED=true
 HTTPS_PORT=3443
 SSL_PRIVATE_KEY_PATH=./ssl/private-key.pem
 SSL_CERTIFICATE_PATH=./ssl/certificate.pem
 
-# URLs - VPS HTTPS
-EXTERNAL_URL=https://31.97.51.165:3443
-FRONTEND_URL=https://31.97.51.165:3443
+# URLs - DuckDNS
+EXTERNAL_URL=https://${DUCKDNS_DOMAIN}:3443
+FRONTEND_URL=https://${DUCKDNS_DOMAIN}:3443
 
-# Database Configuration
+# Database & Redis
 DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app
-
-# Redis Configuration
 REDIS_URL=redis://redis:6379
 
-# Google OAuth Configuration - FROM SECURE FILE
+# Google OAuth dengan DuckDNS
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
-GOOGLE_CALLBACK_URL=https://31.97.51.165:3443/auth/google/callback
+GOOGLE_CALLBACK_URL=https://${DUCKDNS_DOMAIN}:3443/auth/google/callback
 
-# JWT Configuration - FROM SECURE FILE
+# JWT & Security
 JWT_SECRET=${JWT_SECRET}
 JWT_EXPIRES_IN=1h
 REFRESH_TOKEN_SECRET=${REFRESH_TOKEN_SECRET}
 REFRESH_TOKEN_EXPIRES_IN=7d
-
-# Session Configuration - FROM SECURE FILE
 SESSION_SECRET=${SESSION_SECRET}
 
-# ImageKit Configuration - FROM SECURE FILE
+# ImageKit
 IMAGEKIT_PUBLIC_KEY=${IMAGEKIT_PUBLIC_KEY}
 IMAGEKIT_PRIVATE_KEY=${IMAGEKIT_PRIVATE_KEY}
 IMAGEKIT_URL_ENDPOINT=${IMAGEKIT_URL_ENDPOINT}
 
-# Admin Configuration - FROM SECURE FILE
+# Admin
 ADMIN_EMAILS=${ADMIN_EMAILS}
-
-# Logging
 LOG_LEVEL=info
 EOF
 
-echo "✅ .env.docker created with production credentials"
+echo "✅ .env.docker created dengan DuckDNS configuration"
 
-# Remove the problematic docker-auto-env.js yang override konfigurasi
-rm -f docker-auto-env.js
-
-# Verify configuration (tanpa show credentials)
-echo "🔍 Verifying .env.docker configuration:"
-grep -E 'DATABASE_URL|GOOGLE_CALLBACK_URL|VPS_IP|SSL_ENABLED' .env.docker | sed 's/CLIENT_SECRET=.*/CLIENT_SECRET=***HIDDEN***/'
-
-# 🔨 Build dengan no cache untuk memastikan fresh install
-echo "🔨 Building aplikasi dengan fresh dependencies..."
-docker compose build --no-cache --pull
-
-# 🚀 Start services dengan proper wait
-echo "🚀 Memulai services..."
+# Build and deploy
+echo "🔨 Building dan deploying aplikasi..."
+docker compose build --no-cache
 docker compose up -d
 
-# ⏳ Wait untuk services ready
-echo "⏳ Menunggu services siap..."
-sleep 10
+# Health check
+echo "⏳ Waiting for services..."
+sleep 15
 
-# 🏥 Health check
-echo "🏥 Melakukan health check..."
-for i in {1..12}; do
-    if docker compose ps | grep -q "Up.*healthy\|Up.*starting"; then
-        echo "✅ Services berhasil dimulai!"
+echo "🏥 Health check..."
+for i in {1..10}; do
+    if curl -f -s http://localhost:3000/health > /dev/null; then
+        echo "✅ Health check passed!"
         break
-    elif [ $i -eq 12 ]; then
-        echo "❌ Services gagal dimulai setelah 60 detik"
-        echo "📋 Cek logs untuk detail error:"
-        docker compose logs --tail 20
+    elif [ $i -eq 10 ]; then
+        echo "❌ Health check failed"
+        docker compose logs --tail 30 app
         exit 1
     else
-        echo "⏳ Tunggu... ($i/12)"
+        echo "⏳ Health check... ($i/10)"
         sleep 5
     fi
 done
 
-# 📊 Final status
 echo ""
 echo "🎉 Deploy berhasil!"
-echo "🔓 HTTP URL: http://$(hostname -I | awk '{print $1}'):3000 (redirects to HTTPS)"
-echo "🔒 HTTPS URL: https://$(hostname -I | awk '{print $1}'):3443"
-echo "📚 Swagger: https://$(hostname -I | awk '{print $1}'):3443/docs-swagger"
-echo "📊 Status: docker compose ps"
-echo "📋 Logs: docker compose logs -f app"
+echo "🌍 DuckDNS Domain: https://$DUCKDNS_DOMAIN:3443"
+echo "🔓 HTTP (redirects): http://$DUCKDNS_DOMAIN:3000"
+echo "🔒 HTTPS: https://$DUCKDNS_DOMAIN:3443"
+echo "📚 Swagger: https://$DUCKDNS_DOMAIN:3443/docs-swagger"
+echo "🔐 OAuth: https://$DUCKDNS_DOMAIN:3443/auth/google"
 echo ""
 docker compose ps

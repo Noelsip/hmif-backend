@@ -2,64 +2,66 @@ const NetworkUtils = require('../utils/network');
 
 class Environment {
     static getConfig() {
-        const networkInfo = NetworkUtils.getNetworkInfo();
+        const isDevelopment = process.env.NODE_ENV !== 'production';
         const isProduction = process.env.NODE_ENV === 'production';
-        const isDevelopment = process.env.NODE_ENV === 'development';
+        const networkInfo = NetworkUtils.getNetworkInfo();
         
-        // Base URLs berdasarkan environment
-        const baseUrls = {
-            development: {
-                api: `http://localhost:${process.env.PORT || 3000}`,
-                frontend: process.env.FRONTEND_URL || 'http://localhost:8080',
-                callback: `http://localhost:${process.env.PORT || 3000}/auth/google/callback`
-            },
-            production: {
-                api: process.env.API_URL || `https://${process.env.DOMAIN}`,
-                frontend: process.env.FRONTEND_URL || `https://${process.env.DOMAIN}`,
-                callback: process.env.GOOGLE_CALLBACK_URL || `https://${process.env.DOMAIN}/auth/google/callback`
-            },
-            testing: {
-                api: `http://localhost:${process.env.PORT || 3000}`,
-                frontend: `http://${networkInfo.ip}:8080`,
-                callback: `http://localhost:${process.env.PORT || 3000}/auth/google/callback`
-            }
-        };
+        // ✅ DuckDNS Domain Configuration
+        const duckDnsDomain = process.env.DUCKDNS_DOMAIN; // e.g., "hmif-backend.duckdns.org"
+        const httpsPort = process.env.HTTPS_PORT || 3443;
+        const httpPort = process.env.PORT || 3000;
+        
+        // ✅ Smart URL building dengan DuckDNS
+        const baseUrl = isDevelopment 
+            ? `http://localhost:${httpPort}`
+            : duckDnsDomain 
+                ? `https://${duckDnsDomain}:${httpsPort}`
+                : `https://${process.env.VPS_IP || networkInfo.ip}:${httpsPort}`;
+        
+        const frontendUrl = isDevelopment
+            ? `http://localhost:${httpPort}`
+            : process.env.FRONTEND_URL || baseUrl;
 
-        const currentEnv = isProduction ? 'production' : 
-                          process.env.ENABLE_NETWORK_ACCESS === 'true' ? 'testing' : 'development';
-        
+        // ✅ DuckDNS-compatible callback URL
+        const callbackUrl = isDevelopment 
+            ? `http://localhost:${httpPort}/auth/google/callback`
+            : duckDnsDomain
+                ? `https://${duckDnsDomain}:${httpsPort}/auth/google/callback`
+                : `https://${process.env.VPS_IP || networkInfo.ip}:${httpsPort}/auth/google/callback`;
+
         return {
-            ...baseUrls[currentEnv],
-            environment: currentEnv,
-            networkInfo,
-            corsOrigins: this.generateCorsOrigins(baseUrls[currentEnv]),
+            environment: process.env.NODE_ENV || 'development',
+            isDevelopment,
             isProduction,
-            isDevelopment
+            port: httpPort,
+            httpsPort: httpsPort,
+            
+            // DuckDNS info
+            duckDnsDomain,
+            
+            // URLs
+            callback: callbackUrl,
+            frontend: frontendUrl,
+            baseUrl: baseUrl,
+            
+            // SSL settings
+            sslEnabled: process.env.SSL_ENABLED === 'true' && isProduction,
+            
+            // Network info
+            networkInfo
         };
     }
-
-    static generateCorsOrigins(urls) {
-        const origins = [
-            'http://localhost:3000',
-            'http://localhost:3001', 
-            'http://localhost:8080',
-            'http://127.0.0.1:3000',
-            'http://127.0.0.1:8080',
-            urls.frontend,
-            urls.api
-        ];
-
-        // Add network IPs for testing
-        if (process.env.ENABLE_NETWORK_ACCESS === 'true') {
-            const networkInfo = NetworkUtils.getNetworkInfo();
-            origins.push(
-                `http://${networkInfo.ip}:3000`,
-                `http://${networkInfo.ip}:3001`,
-                `http://${networkInfo.ip}:8080`
-            );
+    
+    static validateDuckDnsConfig() {
+        const config = this.getConfig();
+        
+        if (config.isProduction && !config.duckDnsDomain) {
+            console.warn('⚠️  DUCKDNS_DOMAIN not configured for production!');
+            console.warn('   Please set DUCKDNS_DOMAIN=yourdomain.duckdns.org');
+            return false;
         }
-
-        return [...new Set(origins.filter(Boolean))];
+        
+        return true;
     }
 }
 

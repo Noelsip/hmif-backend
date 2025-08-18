@@ -13,31 +13,27 @@ const Environment = require('../config/environment');
 
 const router = express.Router();
 
-// ✅ FIX: Google OAuth dengan scope yang benar
 router.get('/google', (req, res, next) => {
     const config = Environment.getConfig();
     
     console.log('🔍 Starting OAuth flow:', {
         environment: config.environment,
         callback: config.callback,
-        userAgent: req.get('User-Agent')?.substring(0, 50),
-        clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET'
+        isDevelopment: config.isDevelopment,
+        userAgent: req.get('User-Agent')?.substring(0, 50)
     });
     
+    // ✅ Simple OAuth options
     const authOptions = {
         scope: ['profile', 'email'],
-        prompt: 'select_account',
-        access_type: 'offline',
-        include_granted_scopes: true
+        accessType: 'offline',
+        prompt: 'select_account'
     };
     
-    console.log('🔍 OAuth options:', authOptions);
-    
-    // ✅ FIX: Panggil passport.authenticate dengan options
     passport.authenticate('google', authOptions)(req, res, next);
 });
 
-// Google OAuth callback
+// ✅ Google OAuth callback - SIMPLIFIED
 router.get('/google/callback',
     passport.authenticate('google', {
         failureRedirect: '/auth/failure',
@@ -49,13 +45,11 @@ router.get('/google/callback',
             const user = req.user;
             
             if (!user) {
+                console.error('❌ No user data from OAuth');
                 return res.redirect('/auth/failure?error=no_user_data');
             }
 
-            console.log('✅ OAuth Success:', {
-                user: user.email,
-                environment: config.environment
-            });
+            console.log('✅ OAuth Success for user:', user.email);
 
             // Generate tokens
             const accessToken = jwt.sign(
@@ -65,7 +59,7 @@ router.get('/google/callback',
                     isAdmin: user.isAdmin || false
                 },
                 process.env.JWT_SECRET,
-                { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+                { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
             );
 
             const refreshToken = jwt.sign(
@@ -74,17 +68,16 @@ router.get('/google/callback',
                 { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' }
             );
 
-            // Set cookies
+            // Set cookies dengan security options yang tepat
             const cookieOptions = {
                 httpOnly: true,
-                secure: config.isProduction,
-                sameSite: config.isProduction ? 'none' : 'lax',
-                domain: config.isProduction ? process.env.COOKIE_DOMAIN : undefined
+                secure: config.isProduction && config.sslEnabled,
+                sameSite: config.isProduction ? 'none' : 'lax'
             };
 
             res.cookie('accessToken', accessToken, {
                 ...cookieOptions,
-                maxAge: 24 * 60 * 60 * 1000 // 24 hours
+                maxAge: 60 * 60 * 1000 // 1 hour
             });
 
             res.cookie('refreshToken', refreshToken, {
@@ -92,8 +85,9 @@ router.get('/google/callback',
                 maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
             });
 
-            // Smart redirect berdasarkan environment
-            if (config.isDevelopment || req.query.format === 'json') {
+            // ✅ Smart redirect
+            if (config.isDevelopment) {
+                // Development: Return JSON
                 return res.json({
                     success: true,
                     message: 'Authentication successful',
@@ -103,23 +97,21 @@ router.get('/google/callback',
                             email: user.email,
                             name: user.name,
                             profilePicture: user.profilePicture,
-                            nim: user.nim,
                             isAdmin: user.isAdmin || false
                         },
                         accessToken,
-                        refreshToken,
-                        expiresIn: process.env.JWT_EXPIRES_IN || '24h'
-                    },
-                    environment: config.environment
+                        refreshToken
+                    }
                 });
             } else {
+                // Production: Redirect to frontend
                 const redirectUrl = `${config.frontend}/auth/success?token=${encodeURIComponent(accessToken)}`;
                 console.log('🔄 Redirecting to:', redirectUrl);
                 return res.redirect(redirectUrl);
             }
 
         } catch (error) {
-            console.error('❌ Callback Error:', error);
+            console.error('❌ OAuth Callback Error:', error);
             res.redirect(`/auth/failure?error=${encodeURIComponent(error.message)}`);
         }
     }
