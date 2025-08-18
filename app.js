@@ -323,36 +323,34 @@ try {
 }
 
 // Swagger documentation
-try {
-    console.log('🔍 Attempting to load Swagger config...');
-    const swaggerConfig = require('./config/swagger');
-    swaggerUi = swaggerConfig.swaggerUi;
-    swaggerSpec = swaggerConfig.swaggerSpec;
-    swaggerUiOptions = swaggerConfig.swaggerUiOptions;
-    
-    // More detailed logging
-    console.log('📦 Swagger config loaded:');
-    console.log('   - swaggerUi type:', typeof swaggerUi);
-    console.log('   - swaggerUi exists:', !!swaggerUi);
-    console.log('   - swaggerSpec type:', typeof swaggerSpec);
-    console.log('   - swaggerSpec exists:', !!swaggerSpec);
-    console.log('   - swaggerSpec is object:', typeof swaggerSpec === 'object' && swaggerSpec !== null);
-    
-    if (swaggerSpec) {
-        console.log('   - swaggerSpec.openapi:', swaggerSpec.openapi);
-        console.log('   - swaggerSpec.info:', !!swaggerSpec.info);
-        console.log('   - swaggerSpec.paths count:', Object.keys(swaggerSpec.paths || {}).length);
+if (swaggerUi && swaggerSpec) {
+    try {
+        app.use('/docs-swagger', swaggerUi.serve);
+        app.get('/docs-swagger', swaggerUi.setup(swaggerSpec, swaggerUiOptions));
+        console.log('✅ Swagger documentation available at /docs-swagger');
+    } catch (error) {
+        console.error('❌ Failed to setup Swagger UI:', error.message);
     }
+} else {
+    console.warn('⚠️ Swagger not configured:');
+    console.warn('   - swaggerUi:', !!swaggerUi);
+    console.warn('   - swaggerSpec:', !!swaggerSpec);
+    console.warn('   - Check dependencies and configuration');
     
-    if (!swaggerSpec) {
-        throw new Error('Swagger spec is null after loading');
-    }
-    
-} catch (error) {
-    console.error('❌ Failed to load Swagger:', error.message);
-    console.error('   - Stack:', error.stack);
-    swaggerUi = null;
-    swaggerSpec = null;
+    // Create fallback endpoint
+    app.get('/docs-swagger', (req, res) => {
+        res.json({
+            success: false,
+            message: 'Swagger documentation not available',
+            error: 'Swagger configuration failed to load',
+            troubleshooting: [
+                'Check if swagger-jsdoc and swagger-ui-express are installed',
+                'Verify ./config/swagger.js file exists',
+                'Check ./utils/network.js implementation',
+                'Run: npm install swagger-jsdoc swagger-ui-express'
+            ]
+        });
+    });
 }
 
 // Network info endpoint

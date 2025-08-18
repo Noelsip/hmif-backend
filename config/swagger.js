@@ -386,4 +386,8 @@ console.log('   - swaggerUi:', !!exports.swaggerUi);
 console.log('   - swaggerSpec:', !!exports.swaggerSpec);
 console.log('   - swaggerUiOptions:', !!exports.swaggerUiOptions);
 
-module.exports = exports;
+module.exports = {
+    swaggerUi,
+    swaggerSpec,
+    swaggerUiOptions
+};
