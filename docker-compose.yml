@@ -7,20 +7,20 @@ services:
       MYSQL_ROOT_HOST: '%'
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: hmif_app
+      MYSQL_ROOT_PASSWORD_FILE: ''
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      # ✅ Add init script to ensure database is ready
-      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
     networks:
       - hmif-network
-    command: --bind-address=0.0.0.0 --default-authentication-plugin=mysql_native_password
+    command: --bind-address=0.0.0.0 --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=256M
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 5s
+      timeout: 3s
+      retries: 10
       start_period: 30s
 
   redis:
@@ -52,21 +52,23 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "3000:3000"    # HTTP port
-      - "3443:3443"    # HTTPS port 
+      - "3000:3000"
+      - "3443:3443"
     env_file:
       - .env.docker
     volumes:
       - ./logs:/usr/app/logs
-      - ./ssl:/usr/app/ssl  # Mount SSL directory 
+      - ./ssl:/usr/app/ssl
     networks:
       - hmif-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 90s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+    environment:
+      - WAIT_FOR_IT=mysql:3306
 
 networks:
   hmif-network:

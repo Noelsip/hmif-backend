@@ -7,19 +7,20 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User table - untuk sistem autentikasi
+// ✅ Fixed User model sesuai dengan passport.js
 model User {
-  id          Int             @id @default(autoincrement())
-  googleId    String          @unique
-  email       String          @unique
-  name        String
-  picture     String?
-  nim         String?         @unique
-  role        UserRole        @default(USER)
-  isActive    Boolean         @default(true)
-  lastLogin   DateTime?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id              Int             @id @default(autoincrement())
+  googleId        String          @unique
+  email           String          @unique
+  name            String
+  profilePicture  String?         // ✅ Fixed field name (was 'picture')
+  nim             String?         @unique
+  role            UserRole        @default(USER)
+  isAdmin         Boolean         @default(false) // ✅ Added isAdmin field
+  isActive        Boolean         @default(true)
+  lastLoginAt     DateTime?       // ✅ Fixed field name (was 'lastLogin')
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   // Relations
   studentSubjects     StudentSubject[]

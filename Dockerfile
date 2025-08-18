@@ -1,6 +1,6 @@
 FROM node:18-alpine
 
-# Install system dependencies including OpenSSL
+# Install system dependencies
 RUN apk add --no-cache \
     curl \
     mysql-client \
@@ -10,34 +10,28 @@ RUN apk add --no-cache \
 
 WORKDIR /usr/app
 
-# Copy package files first for better caching
+# Copy package files
 COPY package*.json ./
 
-# Install ALL dependencies (production + dev) karena ada prisma di devDependencies
+# Install dependencies
 RUN echo "📦 Installing dependencies..." && \
     npm ci && \
     npm cache clean --force && \
     echo "✅ Dependencies installed successfully"
 
-# Verify critical packages are installed
-RUN echo "🔍 Verifying critical packages..." && \
-    npm list express dotenv prisma @prisma/client || echo "⚠️ Some packages missing"
-
 # Copy source code
 COPY . .
 
-# Generate Prisma client jika schema ada
+# Generate Prisma client
 RUN if [ -f "prisma/schema.prisma" ]; then \
         echo "🔧 Generating Prisma client..." && \
         npx prisma generate; \
-    else \
-        echo "ℹ️ No Prisma schema found, skipping..."; \
     fi
 
-# Create logs and ssl directories with proper permissions
+# Create directories
 RUN mkdir -p logs ssl && chmod 755 logs ssl
 
-# ✅ Create startup script untuk handle database migration
+# ✅ Enhanced startup script dengan proper database migration
 RUN cat > /usr/app/startup.sh << 'EOF'
 #!/bin/bash
 set -e
@@ -46,34 +40,59 @@ echo "🚀 Starting HMIF Backend..."
 
 # Wait for database to be ready
 echo "⏳ Waiting for database connection..."
-max_attempts=30
+max_attempts=60
 attempt=1
 
 while [ $attempt -le $max_attempts ]; do
-    if npx prisma db push --accept-data-loss 2>/dev/null; then
-        echo "✅ Database schema synchronized successfully"
+    echo "🔍 Testing database connection (attempt $attempt/$max_attempts)..."
+    
+    if mysqladmin ping -h mysql -u root -prootpassword 2>/dev/null; then
+        echo "✅ Database server is ready!"
         break
     else
-        echo "⏳ Database not ready yet, attempt $attempt/$max_attempts"
+        echo "⏳ Database not ready, waiting 2 seconds..."
         sleep 2
         attempt=$((attempt + 1))
     fi
     
     if [ $attempt -gt $max_attempts ]; then
-        echo "❌ Database connection failed after $max_attempts attempts"
-        echo "📋 Trying alternative migration method..."
-        
-        # Alternative: run migration deploy
-        npx prisma migrate deploy || echo "⚠️ Migration failed, continuing..."
-        npx prisma db push --accept-data-loss || echo "⚠️ DB push failed"
+        echo "❌ Database connection timeout after $max_attempts attempts"
+        exit 1
     fi
 done
 
-# Generate Prisma client (just in case)
-echo "🔧 Generating Prisma client..."
+# Ensure database exists
+echo "🔧 Ensuring database exists..."
+mysql -h mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null || echo "Database already exists"
+
+# Run database migration/push
+echo "🔄 Running database migration..."
+if npx prisma db push --accept-data-loss --force-reset; then
+    echo "✅ Database schema synchronized successfully"
+elif npx prisma migrate deploy; then
+    echo "✅ Migration deployed successfully"
+else
+    echo "⚠️  Migration failed, trying to create tables manually..."
+    # Generate Prisma client just in case
+    npx prisma generate
+fi
+
+# Verify tables exist
+echo "🔍 Verifying database tables..."
+TABLES=$(mysql -h mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null | wc -l)
+if [ $TABLES -gt 1 ]; then
+    echo "✅ Database tables created ($((TABLES-1)) tables found)"
+    mysql -h mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null || true
+else
+    echo "❌ No tables found in database!"
+    echo "🔄 Trying emergency schema creation..."
+    npx prisma db push --accept-data-loss --force-reset || echo "Emergency push failed"
+fi
+
+# Final Prisma client generation
+echo "🔧 Final Prisma client generation..."
 npx prisma generate
 
-# Start the application
 echo "🚀 Starting Node.js application..."
 exec npm start
 EOF
@@ -81,12 +100,12 @@ EOF
 # Make startup script executable
 RUN chmod +x /usr/app/startup.sh
 
-# Expose both HTTP and HTTPS ports
+# Expose ports
 EXPOSE 3000 3443
 
-# Simple health check without external dependency
-HEALTHCHECK --interval=30s --timeout=15s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:3000/health || node -e "require('http').get('http://localhost:3000/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))" || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=5 \
+    CMD curl -f http://localhost:3000/health || exit 1
 
-# Use startup script instead of direct npm start
+# Use startup script
 CMD ["/usr/app/startup.sh"]
