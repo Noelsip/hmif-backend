@@ -11,24 +11,22 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      # ✅ Perbaiki path dan pastikan file exists
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - hmif-network
-    # ✅ Perbaiki MySQL command dengan parameter yang benar
+    # ✅ Simplified command yang lebih stable
     command: >
       --bind-address=0.0.0.0 
-      --authentication_policy=mysql_native_password 
-      --innodb-buffer-pool-size=256M
-      --max_connections=200
+      --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4 
       --collation-server=utf8mb4_unicode_ci
+      --innodb-buffer-pool-size=256M
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
       interval: 10s
       timeout: 5s
-      retries: 6
-      start_period: 40s
+      retries: 10
+      start_period: 60s
 
   redis:
     image: redis:7-alpine
@@ -40,15 +38,7 @@ services:
       - redis_data:/data
     networks:
       - hmif-network
-    # ✅ Add sysctl untuk fix memory overcommit warning
-    sysctls:
-      - net.core.somaxconn=1024
-    command: >
-      redis-server 
-      --appendonly yes 
-      --bind 0.0.0.0 
-      --maxmemory 256mb 
-      --maxmemory-policy allkeys-lru
+    command: redis-server --appendonly yes --bind 0.0.0.0
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -76,10 +66,6 @@ services:
       - ./ssl:/usr/app/ssl
     networks:
       - hmif-network
-    # ✅ Add environment variables untuk debugging
-    environment:
-      - DEBUG=prisma:*
-      - NODE_OPTIONS=--max-old-space-size=1024
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
@@ -90,13 +76,7 @@ services:
 networks:
   hmif-network:
     driver: bridge
-    ipam:
-      config:
-        - subnet: 172.30.0.0/16
-          gateway: 172.30.0.1
 
 volumes:
   mysql_data:
-    driver: local
   redis_data:
-    driver: local
