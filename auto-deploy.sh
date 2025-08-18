@@ -94,6 +94,11 @@ else
     echo "✅ SSL certificates already exist"
 fi
 
+# Force clean migration by removing volumes completely
+echo "🗑️ Force clean database state for proper migration..."
+docker compose down --volumes --remove-orphans --timeout 30 2>/dev/null || true
+docker volume rm $(docker volume ls -q | grep -E "(mysql_data|redis_data)") 2>/dev/null || true
+
 # Create .env.docker with SSL-disabled MySQL connection
 echo "📝 Creating Docker environment with SSL-disabled MySQL connection..."
 cat > .env.docker << EOF
