@@ -14,33 +14,76 @@ const Environment = require('../config/environment');
 const router = express.Router();
 
 router.get('/google', (req, res, next) => {
-    const config = Environment.getConfig();
-    
-    console.log('🔍 Starting OAuth flow:', {
-        environment: config.environment,
-        callback: config.callback,
-        isDevelopment: config.isDevelopment,
-        userAgent: req.get('User-Agent')?.substring(0, 50)
-    });
-    
-    // ✅ Simple OAuth options
-    const authOptions = {
-        scope: ['profile', 'email'],
-        accessType: 'offline',
-        prompt: 'select_account'
-    };
-    
-    passport.authenticate('google', authOptions)(req, res, next);
+    try {
+        const config = Environment.getConfig();
+        
+        console.log('🔍 Starting OAuth flow:', {
+            environment: config.environment,
+            callback: config.callback,
+            isDevelopment: config.isDevelopment,
+            userAgent: req.get('User-Agent')?.substring(0, 50),
+            timestamp: new Date().toISOString()
+        });
+        
+        // ✅ Validate required environment variables
+        if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+            console.error('❌ Google OAuth credentials missing!');
+            return res.status(500).json({
+                success: false,
+                message: 'OAuth configuration error',
+                error: 'Google OAuth credentials not configured'
+            });
+        }
+        
+        const authOptions = {
+            scope: ['profile', 'email'],
+            accessType: 'offline',
+            prompt: 'select_account'
+        };
+        
+        passport.authenticate('google', authOptions)(req, res, next);
+        
+    } catch (error) {
+        console.error('❌ OAuth initiation error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'OAuth initiation failed',
+            error: error.message
+        });
+    }
 });
 
-// ✅ Google OAuth callback - SIMPLIFIED
+// ✅ Enhanced Google OAuth callback with detailed error handling
 router.get('/google/callback',
+    (req, res, next) => {
+        console.log('🔍 OAuth callback received:', {
+            query: req.query,
+            hasCode: !!req.query.code,
+            hasError: !!req.query.error,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Check for OAuth errors from Google
+        if (req.query.error) {
+            console.error('❌ OAuth error from Google:', req.query.error);
+            return res.redirect(`/auth/failure?error=${encodeURIComponent(req.query.error)}`);
+        }
+        
+        if (!req.query.code) {
+            console.error('❌ No authorization code received');
+            return res.redirect('/auth/failure?error=no_code');
+        }
+        
+        next();
+    },
     passport.authenticate('google', {
         failureRedirect: '/auth/failure',
         session: false
     }),
     async (req, res) => {
         try {
+            console.log('🔍 OAuth callback processing...');
+            
             const config = Environment.getConfig();
             const user = req.user;
             
@@ -49,7 +92,18 @@ router.get('/google/callback',
                 return res.redirect('/auth/failure?error=no_user_data');
             }
 
-            console.log('✅ OAuth Success for user:', user.email);
+            console.log('✅ OAuth Success for user:', {
+                id: user.id,
+                email: user.email,
+                name: user.name,
+                isAdmin: user.isAdmin
+            });
+
+            // ✅ Validate JWT secrets
+            if (!process.env.JWT_SECRET) {
+                console.error('❌ JWT_SECRET not configured');
+                throw new Error('JWT configuration missing');
+            }
 
             // Generate tokens
             const accessToken = jwt.sign(
@@ -64,15 +118,18 @@ router.get('/google/callback',
 
             const refreshToken = jwt.sign(
                 { id: user.id },
-                process.env.REFRESH_TOKEN_SECRET,
+                process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
                 { expiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || '7d' }
             );
 
-            // Set cookies dengan security options yang tepat
+            console.log('✅ Tokens generated successfully');
+
+            // Set cookies
             const cookieOptions = {
                 httpOnly: true,
                 secure: config.isProduction && config.sslEnabled,
-                sameSite: config.isProduction ? 'none' : 'lax'
+                sameSite: config.isProduction ? 'none' : 'lax',
+                path: '/'
             };
 
             res.cookie('accessToken', accessToken, {
@@ -85,9 +142,11 @@ router.get('/google/callback',
                 maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
             });
 
-            // ✅ Smart redirect
+            console.log('✅ Cookies set successfully');
+
+            // Response based on environment
             if (config.isDevelopment) {
-                // Development: Return JSON
+                console.log('🔄 Development: Returning JSON response');
                 return res.json({
                     success: true,
                     message: 'Authentication successful',
@@ -106,39 +165,69 @@ router.get('/google/callback',
             } else {
                 // Production: Redirect to frontend
                 const redirectUrl = `${config.frontend}/auth/success?token=${encodeURIComponent(accessToken)}`;
-                console.log('🔄 Redirecting to:', redirectUrl);
+                console.log('🔄 Production: Redirecting to:', redirectUrl);
                 return res.redirect(redirectUrl);
             }
 
         } catch (error) {
-            console.error('❌ OAuth Callback Error:', error);
-            res.redirect(`/auth/failure?error=${encodeURIComponent(error.message)}`);
+            console.error('❌ OAuth Callback Error:', {
+                message: error.message,
+                stack: error.stack,
+                user: req.user ? { id: req.user.id, email: req.user.email } : null,
+                timestamp: new Date().toISOString()
+            });
+            
+            // Return JSON error instead of redirect for better debugging
+            return res.status(500).json({
+                success: false,
+                message: 'OAuth processing failed',
+                error: process.env.NODE_ENV === 'development' ? error.message : 'Authentication error',
+                requestId: req.requestId
+            });
         }
     }
 );
 
-// Debug OAuth URL endpoint
-router.get('/debug/oauth-url', (req, res) => {
-    const oauthUrl = `https://accounts.google.com/oauth2/auth?` +
-        `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
-        `redirect_uri=${encodeURIComponent(process.env.GOOGLE_CALLBACK_URL)}&` +
-        `scope=${encodeURIComponent('profile email')}&` +
-        `response_type=code&` +
-        `prompt=select_account`;
-    
-    res.json({
-        success: true,
-        message: 'OAuth Debug URL',
-        data: {
-            generatedUrl: oauthUrl,
-            clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
-            callbackUrl: process.env.GOOGLE_CALLBACK_URL,
-            scopeUsed: 'profile email'
-        }
-    });
+// Enhanced debug endpoint
+router.get('/debug/oauth-config', (req, res) => {
+    try {
+        const config = Environment.getConfig();
+        
+        const debugInfo = {
+            success: true,
+            message: 'OAuth Debug Information',
+            data: {
+                environment: config.environment,
+                callback: config.callback,
+                baseUrl: config.baseUrl,
+                frontend: config.frontend,
+                sslEnabled: config.sslEnabled,
+                credentials: {
+                    clientId: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
+                    clientSecret: process.env.GOOGLE_CLIENT_SECRET ? 'SET' : 'NOT SET',
+                    jwtSecret: process.env.JWT_SECRET ? 'SET' : 'NOT SET'
+                },
+                generatedUrl: `https://accounts.google.com/oauth2/auth?` +
+                    `client_id=${process.env.GOOGLE_CLIENT_ID}&` +
+                    `redirect_uri=${encodeURIComponent(config.callback)}&` +
+                    `scope=${encodeURIComponent('profile email')}&` +
+                    `response_type=code&` +
+                    `prompt=select_account`,
+                database: prisma ? 'CONNECTED' : 'NOT CONNECTED'
+            }
+        };
+        
+        res.json(debugInfo);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Debug endpoint error',
+            error: error.message
+        });
+    }
 });
 
-// Get current user
+// Enhanced get current user
 router.get('/me', async (req, res) => {
     try {
         const token = req.cookies.accessToken || req.headers.authorization?.replace('Bearer ', '');
@@ -160,7 +249,8 @@ router.get('/me', async (req, res) => {
                 name: true,
                 profilePicture: true,
                 isAdmin: true,
-                createdAt: true
+                createdAt: true,
+                lastLoginAt: true
             }
         });
 
@@ -177,15 +267,16 @@ router.get('/me', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Get user error:', error);
+        console.error('❌ Get user error:', error);
         res.status(401).json({
             success: false,
-            message: 'Invalid token'
+            message: 'Invalid token',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Token validation failed'
         });
     }
 });
 
-// Refresh token
+// Refresh token endpoint
 router.post('/refresh', async (req, res) => {
     try {
         const refreshToken = req.cookies.refreshToken;
@@ -197,7 +288,7 @@ router.post('/refresh', async (req, res) => {
             });
         }
 
-        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
+        const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET);
         
         const user = await prisma.user.findUnique({
             where: { id: decoded.id }
@@ -217,14 +308,15 @@ router.post('/refresh', async (req, res) => {
                 isAdmin: user.isAdmin 
             },
             process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN }
+            { expiresIn: process.env.JWT_EXPIRES_IN || '1h' }
         );
 
         res.cookie('accessToken', newAccessToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
             sameSite: 'lax',
-            maxAge: 60 * 60 * 1000 // 1 hour
+            maxAge: 60 * 60 * 1000,
+            path: '/'
         });
 
         res.json({
@@ -236,18 +328,19 @@ router.post('/refresh', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Refresh token error:', error);
+        console.error('❌ Refresh token error:', error);
         res.status(401).json({
             success: false,
-            message: 'Invalid refresh token'
+            message: 'Invalid refresh token',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Token refresh failed'
         });
     }
 });
 
-// Logout
+// Logout endpoint
 router.post('/logout', (req, res) => {
-    res.clearCookie('accessToken');
-    res.clearCookie('refreshToken');
+    res.clearCookie('accessToken', { path: '/' });
+    res.clearCookie('refreshToken', { path: '/' });
     
     res.json({
         success: true,
@@ -255,11 +348,21 @@ router.post('/logout', (req, res) => {
     });
 });
 
-// Auth failure route
+// Enhanced failure route
 router.get('/failure', (req, res) => {
+    const error = req.query.error || 'unknown_error';
+    
+    console.log('❌ OAuth failure:', {
+        error,
+        query: req.query,
+        timestamp: new Date().toISOString()
+    });
+    
     res.status(401).json({
         success: false,
-        message: 'Authentication failed'
+        message: 'Authentication failed',
+        error: error,
+        details: req.query
     });
 });
 
