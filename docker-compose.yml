@@ -14,19 +14,19 @@ services:
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - hmif-network
-    # ✅ Simplified command yang lebih stable
     command: >
       --bind-address=0.0.0.0 
       --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4 
       --collation-server=utf8mb4_unicode_ci
       --innodb-buffer-pool-size=256M
+      --max-connections=200
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
 
   redis:
     image: redis:7-alpine
@@ -66,17 +66,26 @@ services:
       - ./ssl:/usr/app/ssl
     networks:
       - hmif-network
+    environment:
+      - DEBUG=*
+      - NODE_OPTIONS=--max-old-space-size=1024
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 5
-      start_period: 120s
+      start_period: 180s
 
 networks:
   hmif-network:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/16
 
 volumes:
   mysql_data:
+    driver: local
   redis_data:
+    driver: local

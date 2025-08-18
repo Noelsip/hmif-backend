@@ -27,7 +27,7 @@ fi
 echo "🌐 DuckDNS Domain: $DUCKDNS_DOMAIN"
 echo "🔐 Google OAuth Client ID: ${GOOGLE_CLIENT_ID:0:20}..."
 
-# ✅ CREATE INIT-DB.SQL FILE (Critical Fix)
+# Create init-db.sql
 echo "📝 Creating init-db.sql file..."
 cat > init-db.sql << 'EOF'
 CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -36,12 +36,7 @@ GRANT ALL PRIVILEGES ON hmif_app.* TO 'root'@'%';
 FLUSH PRIVILEGES;
 EOF
 
-# Ensure proper line endings (Unix format)
-if command -v dos2unix >/dev/null 2>&1; then
-    dos2unix init-db.sql 2>/dev/null || true
-fi
-
-# Set proper file permissions
+dos2unix init-db.sql 2>/dev/null || sed -i 's/\r$//' init-db.sql
 chmod 644 init-db.sql
 
 echo "✅ init-db.sql created with proper format"
@@ -51,7 +46,7 @@ echo "🧹 Cleaning up containers..."
 docker compose down --volumes --remove-orphans 2>/dev/null || true
 docker system prune -f
 
-# ✅ Remove old volumes to ensure fresh start
+# Remove old volumes
 echo "🗑️  Removing old database volumes..."
 docker volume rm $(docker volume ls -q | grep mysql) 2>/dev/null || true
 
@@ -103,23 +98,14 @@ EOF
 
 echo "✅ .env.docker created"
 
-# ✅ Verify files before building
+# Verify files
 echo "🔍 Verifying required files..."
-if [ ! -f "init-db.sql" ]; then
-    echo "❌ init-db.sql is missing!"
-    exit 1
-fi
-
-if [ ! -f "docker-compose.yml" ]; then
-    echo "❌ docker-compose.yml is missing!"
-    exit 1
-fi
-
-if [ ! -f "Dockerfile" ]; then
-    echo "❌ Dockerfile is missing!"
-    exit 1
-fi
-
+for file in init-db.sql docker-compose.yml Dockerfile; do
+    if [ ! -f "$file" ]; then
+        echo "❌ $file is missing!"
+        exit 1
+    fi
+done
 echo "✅ All required files present"
 
 # Build and deploy
@@ -127,52 +113,61 @@ echo "🔨 Building and deploying application..."
 docker compose build --no-cache --pull
 docker compose up -d
 
-# Enhanced health check
+# ✅ Enhanced health check dengan network debugging
 echo "⏳ Waiting for services to start..."
-sleep 45  # Give more time for MySQL initialization
+sleep 60  # Give more time for network setup
 
-echo "🏥 Running health checks..."
+echo "🏥 Running comprehensive health checks..."
 
-# Check MySQL first
-echo "🔍 Checking MySQL..."
-for i in {1..20}; do
+# Check network first
+echo "🔍 Checking Docker network..."
+docker network ls | grep hmif || echo "⚠️  Network hmif-network not found"
+
+# Check container connectivity
+echo "🔍 Testing container connectivity..."
+for i in {1..10}; do
     if docker compose exec mysql mysqladmin ping -u root -prootpassword --silent 2>/dev/null; then
-        echo "✅ MySQL is ready (attempt $i)"
-        break
+        echo "✅ MySQL container is ready (attempt $i)"
+        
+        # Test network connectivity between containers
+        if docker compose exec app nc -z mysql 3306 2>/dev/null; then
+            echo "✅ App can connect to MySQL container"
+            break
+        else
+            echo "⚠️  App cannot connect to MySQL container, attempt $i/10"
+            sleep 5
+        fi
     else
-        echo "⏳ MySQL not ready, attempt $i/20..."
+        echo "⏳ MySQL not ready, attempt $i/10..."
         sleep 5
     fi
     
-    if [ $i -eq 20 ]; then
-        echo "❌ MySQL failed to start after 20 attempts"
-        echo "📋 MySQL logs:"
-        docker compose logs mysql
+    if [ $i -eq 10 ]; then
+        echo "❌ Network connectivity failed after 10 attempts"
+        echo "📋 Network debugging:"
+        docker network inspect hmif-network || true
+        docker compose exec app nslookup mysql || true
+        docker compose exec app nc -zv mysql 3306 || true
+        echo "📋 Container logs:"
+        docker compose logs mysql --tail 20
+        docker compose logs app --tail 20
         exit 1
     fi
 done
 
-# Check if database exists
-echo "🔍 Verifying database..."
-DB_EXISTS=$(docker compose exec mysql mysql -u root -prootpassword -e "SHOW DATABASES LIKE 'hmif_app';" -s -N 2>/dev/null | wc -l)
-if [ "$DB_EXISTS" -eq 0 ]; then
-    echo "⚠️  Database hmif_app not found, creating manually..."
-    docker compose exec mysql mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-fi
-
 # Check application health
-echo "🔍 Checking application..."
-for i in {1..15}; do
+echo "🔍 Checking application health..."
+for i in {1..20}; do
     if curl -f -s http://localhost:3000/health > /dev/null; then
         echo "✅ Application health check passed!"
         break
-    elif [ $i -eq 15 ]; then
+    elif [ $i -eq 20 ]; then
         echo "❌ Application health check failed"
         echo "📋 App logs:"
-        docker compose logs --tail 50 app
+        docker compose logs app --tail 50
         exit 1
     else
-        echo "⏳ App health check attempt $i/15..."
+        echo "⏳ App health check attempt $i/20..."
         sleep 10
     fi
 done
@@ -183,21 +178,24 @@ if docker compose exec app npx prisma db push --accept-data-loss --force-reset; 
     echo "✅ Database schema synchronized"
 else
     echo "⚠️  Schema sync failed, trying alternative..."
-    docker compose exec app npx prisma generate
+    docker compose exec app npx prisma generate || true
     docker compose exec app npx prisma migrate deploy || true
 fi
 
 # Final verification
 echo "🔍 Final verification..."
-docker compose exec mysql mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null | head -10
+docker compose exec mysql mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null | head -10 || echo "⚠️  Could not verify tables"
 
 echo ""
 echo "🎉 Deploy berhasil!"
 echo "🌍 DuckDNS Domain: https://$DUCKDNS_DOMAIN:3443"
-echo "🔓 HTTP: http://$DUCKDNS_DOMAIN:3000"
+echo "🔓 HTTP: http://$DUCKDNS_DOMAIN:3000"  
 echo "🔒 HTTPS: https://$DUCKDNS_DOMAIN:3443"
 echo "📚 Swagger: https://$DUCKDNS_DOMAIN:3443/docs-swagger"
 echo "🔐 OAuth: https://$DUCKDNS_DOMAIN:3443/auth/google"
 echo ""
-echo "📊 Container status:"
+echo "📊 Final container status:"
 docker compose ps
+echo ""
+echo "🔍 Network status:"
+docker network inspect hmif-network | grep -A 5 -B 5 "Containers" || true
