@@ -128,6 +128,21 @@ EOF
 
 echo "✅ .env.docker created with SSL-disabled MySQL connection"
 
+echo "🔧 Ensuring vm.overcommit_memory=1 on host (required by Redis)"
+if sysctl -n vm.overcommit_memory 2>/dev/null | grep -q '^1$'; then
+  echo "✅ vm.overcommit_memory already = 1"
+else
+  echo "🔐 Setting vm.overcommit_memory=1 (requires sudo)"
+  sudo sysctl -w vm.overcommit_memory=1 || echo "⚠️ sudo sysctl failed — run 'sudo sysctl -w vm.overcommit_memory=1' on the host"
+  # persist across reboot if possible
+  if [ -w /etc/sysctl.conf ]; then
+    grep -q '^vm.overcommit_memory' /etc/sysctl.conf 2>/dev/null && sudo sed -i 's/^vm.overcommit_memory.*/vm.overcommit_memory = 1/' /etc/sysctl.conf || echo 'vm.overcommit_memory = 1' | sudo tee -a /etc/sysctl.conf >/dev/null
+    echo "✅ Persisted vm.overcommit_memory in /etc/sysctl.conf"
+  else
+    echo "⚠️ Cannot persist to /etc/sysctl.conf automatically (permission denied)"
+  fi
+fi
+
 # Build Docker images
 echo "🔨 Building Docker images..."
 docker compose build --no-cache --pull
