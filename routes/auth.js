@@ -189,25 +189,67 @@ router.get('/google/callback',
 );
 
 router.get('/success', (req, res) => {
-    const config = Environment.getConfig();
-    const token = req.query.token;
-    if (!token) {
-        return res.status(400).json({
+    try {
+        const config = Environment.getConfig();
+        const token = req.query.token;
+
+        if (!token) {
+            return res.status(400).json({
+                success: false,
+                message: 'No token provided'
+            });
+        }
+
+        // verify the token to get user information
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+        // get user data from database
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            select: {
+                id: true,
+                email: true,
+                name: true,
+                profilePicture: true,
+                isAdmin: true
+            }
+        });
+
+        console.log('🔍 OAuth Success Response:', {
+            user: {
+                id: user.id,
+                email: user.email,
+                name: user.name
+            },
+            requestId: req.requestId,
+            token: token.substring(0, 20) + '...',
+            timestamp: new Date().toISOString()
+        });
+
+        // return JSON response
+        res.json({
+            success: true,
+            message: 'Authentication successful',
+            data: {
+                user: {
+                    id: user.id,
+                    email: user.email,
+                    name: user.name,
+                    profilePicture: user.profilePicture,
+                    isAdmin: user.isAdmin || false
+                },
+                token: token
+            }
+        });
+    } catch (error) {
+        console.error('❌ OAuth Success Error:', error);
+        res.status(500).json({
             success: false,
-            message: 'No token provided'
+            message: 'Authentication failed',
+            error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
         });
     }
-    console.log('🔍 OAuth Success Redirect:',  {
-        message: 'User successfully authenticated',
-        user: req.user ? { id: req.user.id, email: req.user.email } : null,
-        requestId: req.requestId,
-        token: token.substring(0, 20) + '...',
-        frontendUrl: config.frontend,
-        timestamp: new Date().toISOString()
-    });
-    res.redirect(`${config.frontend}/auth/success?token=${encodeURIComponent(token)}`);
-    
-});
+})
 
 // Enhanced debug endpoint
 router.get('/debug/oauth-config', (req, res) => {
