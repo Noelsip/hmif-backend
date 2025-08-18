@@ -22,34 +22,42 @@ const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 const isDevelopment = process.env.NODE_ENV !== 'production';
 const baseUrl = isDevelopment 
     ? `http://localhost:${PORT}`
-    : `https://${networkInfo.ip}:${HTTPS_PORT}`;
+    : `https://${process.env.DUCKDNS_DOMAIN || networkInfo.ip}:${HTTPS_PORT}`;
 
 console.log(`🌐 Swagger server URL: ${baseUrl}`);
 
-// Check if route files exist
-const routeFilesExist = fs.existsSync('./routes');
-const appFileExists = fs.existsSync('./app.js');
-console.log('📁 Files check:');
-console.log('   Routes directory:', routeFilesExist);
-console.log('   App.js file:', appFileExists);
-
-// Build API paths based on existing files
-const apiPaths = [];
-if (appFileExists) apiPaths.push('./app.js');
-if (routeFilesExist) {
+// Build API paths with better error handling
+const buildApiPaths = () => {
+    const apiPaths = [];
+    
     try {
-        const routeFiles = fs.readdirSync('./routes');
-        routeFiles.forEach(file => {
-            if (file.endsWith('.js')) {
-                apiPaths.push(`./routes/${file}`);
-            }
-        });
+        // Check app.js
+        if (fs.existsSync('./app.js')) {
+            apiPaths.push('./app.js');
+            console.log('✅ app.js found');
+        }
+        
+        // Check routes directory
+        if (fs.existsSync('./routes') && fs.statSync('./routes').isDirectory()) {
+            const routeFiles = fs.readdirSync('./routes').filter(file => file.endsWith('.js'));
+            routeFiles.forEach(file => {
+                const fullPath = `./routes/${file}`;
+                apiPaths.push(fullPath);
+                console.log(`✅ Route file found: ${file}`);
+            });
+        } else {
+            console.warn('⚠️  Routes directory not found');
+        }
+        
+        console.log('📝 Total API paths:', apiPaths.length);
+        return apiPaths;
     } catch (error) {
-        console.warn('⚠️  Could not read routes directory:', error.message);
+        console.error('❌ Error building API paths:', error.message);
+        return [];
     }
-}
+};
 
-console.log('📝 API paths for swagger:', apiPaths);
+const apiPaths = buildApiPaths();
 
 const options = {
     definition: {
@@ -284,83 +292,242 @@ const options = {
             { cookieAuth: [] }
         ]
     },
-    apis: [apiPaths],
+    apis: apiPaths
 };
 
 let swaggerSpec = null;
 
-// Try generating spec with multiple fallbacks
-console.log('📝 Generating Swagger spec...');
+// Enhanced multi-level fallback system
+console.log('📝 Generating Swagger spec with enhanced fallbacks...');
 
-// First try: Full spec with all files
+// Level 1: Try with all files
 try {
-    swaggerSpec = swaggerJsdoc(swaggerOptions);
-    if (!swaggerSpec || !swaggerSpec.openapi) {
-        throw new Error('Generated swagger spec is invalid');
-    }
-    console.log('✅ Swagger spec generated successfully (with files)');
-} catch (error) {
-    console.warn('⚠️  Failed to generate spec with files:', error.message);
+    console.log('🧪 Level 1: Full spec with file parsing...');
+    swaggerSpec = swaggerJsdoc(options);
     
-    // Second try: Minimal spec without file parsing
+    if (swaggerSpec && swaggerSpec.openapi && Object.keys(swaggerSpec.paths || {}).length > 0) {
+        console.log('✅ Level 1 SUCCESS: Full spec generated with API paths');
+    } else {
+        throw new Error('Generated spec is empty or invalid');
+    }
+} catch (error) {
+    console.warn('⚠️  Level 1 FAILED:', error.message);
+    
+    // Level 2: Try without file parsing
     try {
-        const minimalOptions = {
-            ...swaggerOptions,
-            apis: [] // No files
+        console.log('🧪 Level 2: Basic spec without file parsing...');
+        const basicOptions = {
+            ...options,
+            apis: []
         };
-        swaggerSpec = swaggerJsdoc(minimalOptions);
-        console.log('✅ Swagger spec generated (minimal fallback)');
-    } catch (minimalError) {
-        console.error('❌ Even minimal spec failed:', minimalError.message);
+        swaggerSpec = swaggerJsdoc(basicOptions);
         
-        // Third try: Hardcoded spec
+        if (swaggerSpec && swaggerSpec.openapi) {
+            console.log('✅ Level 2 SUCCESS: Basic spec generated');
+        } else {
+            throw new Error('Basic spec generation failed');
+        }
+    } catch (basicError) {
+        console.warn('⚠️  Level 2 FAILED:', basicError.message);
+        
+        // Level 3: Hardcoded fallback spec
+        console.log('🧪 Level 3: Hardcoded fallback spec...');
         swaggerSpec = {
             openapi: '3.0.0',
             info: {
                 title: 'HMIF Backend API',
                 version: '1.0.0',
-                description: 'API documentation for HMIF Backend (Fallback)'
+                description: 'API documentation for HMIF Backend (Emergency Fallback)',
+                contact: {
+                    name: 'HMIF Development Team',
+                    email: '11231072@student.itk.ac.id'
+                }
             },
             servers: [
                 {
                     url: baseUrl,
-                    description: 'Server'
+                    description: 'Production server'
                 }
             ],
             paths: {
                 '/': {
                     get: {
                         summary: 'Root endpoint',
+                        description: 'Returns API information',
                         responses: {
                             '200': {
-                                description: 'Success'
+                                description: 'Success',
+                                content: {
+                                    'application/json': {
+                                        schema: {
+                                            type: 'object',
+                                            properties: {
+                                                success: { type: 'boolean' },
+                                                message: { type: 'string' },
+                                                data: { type: 'object' }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
                 },
                 '/health': {
                     get: {
-                        summary: 'Health check',
+                        summary: 'Health check endpoint',
+                        description: 'Returns server health status',
                         responses: {
                             '200': {
-                                description: 'Server is healthy'
+                                description: 'Server is healthy',
+                                content: {
+                                    'application/json': {
+                                        schema: {
+                                            type: 'object',
+                                            properties: {
+                                                success: { type: 'boolean' },
+                                                message: { type: 'string' },
+                                                data: { type: 'object' }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            '503': {
+                                description: 'Service unavailable'
+                            }
+                        }
+                    }
+                },
+                '/auth/google': {
+                    get: {
+                        tags: ['Authentication'],
+                        summary: 'Google OAuth login',
+                        description: 'Initiates Google OAuth authentication flow',
+                        responses: {
+                            '302': {
+                                description: 'Redirect to Google OAuth'
+                            },
+                            '500': {
+                                description: 'OAuth configuration error',
+                                content: {
+                                    'application/json': {
+                                        schema: { $ref: '#/components/schemas/ErrorResponse' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                '/auth/success': {
+                    get: {
+                        tags: ['Authentication'],
+                        summary: 'OAuth success endpoint',
+                        description: 'Returns user information after successful OAuth',
+                        parameters: [
+                            {
+                                in: 'query',
+                                name: 'token',
+                                required: true,
+                                schema: { type: 'string' },
+                                description: 'JWT token from OAuth callback'
+                            }
+                        ],
+                        responses: {
+                            '200': {
+                                description: 'Authentication successful',
+                                content: {
+                                    'application/json': {
+                                        schema: { $ref: '#/components/schemas/AuthResponse' }
+                                    }
+                                }
+                            },
+                            '400': {
+                                description: 'No token provided'
+                            },
+                            '401': {
+                                description: 'Invalid token'
+                            }
+                        }
+                    }
+                },
+                '/auth/me': {
+                    get: {
+                        tags: ['Authentication'],
+                        summary: 'Get current user',
+                        description: 'Returns current authenticated user information',
+                        security: [
+                            { bearerAuth: [] },
+                            { cookieAuth: [] }
+                        ],
+                        responses: {
+                            '200': {
+                                description: 'User information retrieved',
+                                content: {
+                                    'application/json': {
+                                        schema: {
+                                            type: 'object',
+                                            properties: {
+                                                success: { type: 'boolean' },
+                                                data: { $ref: '#/components/schemas/User' }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            '401': {
+                                description: 'Unauthorized'
+                            }
+                        }
+                    }
+                },
+                '/auth/logout': {
+                    post: {
+                        tags: ['Authentication'],
+                        summary: 'Logout user',
+                        description: 'Clears authentication cookies',
+                        responses: {
+                            '200': {
+                                description: 'Successfully logged out'
                             }
                         }
                     }
                 }
             },
-            components: swaggerOptions.definition.components
+            components: options.definition.components
         };
-        console.log('✅ Using hardcoded swagger spec (final fallback)');
+        console.log('✅ Level 3 SUCCESS: Hardcoded spec created');
     }
 }
 
-if (swaggerSpec) {
-    console.log(`   Title: ${swaggerSpec.info?.title}`);
-    console.log(`   Version: ${swaggerSpec.info?.version}`);
-    console.log(`   Servers: ${swaggerSpec.servers?.length || 0}`);
-    console.log(`   Paths: ${Object.keys(swaggerSpec.paths || {}).length}`);
+// Final validation
+if (!swaggerSpec) {
+    console.error('❌ All fallback levels failed - creating emergency minimal spec');
+    swaggerSpec = {
+        openapi: '3.0.0',
+        info: {
+            title: 'HMIF Backend API',
+            version: '1.0.0',
+            description: 'Emergency minimal API documentation'
+        },
+        servers: [{ url: baseUrl }],
+        paths: {
+            '/': {
+                get: {
+                    summary: 'Root endpoint',
+                    responses: { '200': { description: 'Success' } }
+                }
+            }
+        }
+    };
 }
+
+// Log final spec info
+console.log('📊 Final Swagger spec info:');
+console.log(`   Title: ${swaggerSpec.info?.title}`);
+console.log(`   Version: ${swaggerSpec.info?.version}`);
+console.log(`   Servers: ${swaggerSpec.servers?.length || 0}`);
+console.log(`   Paths: ${Object.keys(swaggerSpec.paths || {}).length}`);
 
 const swaggerUiOptions = {
     customCss: '.swagger-ui .topbar { display: none }',
@@ -370,21 +537,16 @@ const swaggerUiOptions = {
         displayRequestDuration: true,
         tryItOutEnabled: true,
         filter: true,
-        displayOperationId: false
+        displayOperationId: false,
+        docExpansion: 'list',
+        defaultModelsExpandDepth: 2
     }
 };
 
-// Validate exports
-const exports = {
-    swaggerUi,
-    swaggerSpec,
-    swaggerUiOptions
-};
-
 console.log('📦 Swagger module exports:');
-console.log('   - swaggerUi:', !!exports.swaggerUi);
-console.log('   - swaggerSpec:', !!exports.swaggerSpec);
-console.log('   - swaggerUiOptions:', !!exports.swaggerUiOptions);
+console.log('   - swaggerUi:', !!swaggerUi);
+console.log('   - swaggerSpec:', !!swaggerSpec);
+console.log('   - swaggerUiOptions:', !!swaggerUiOptions);
 
 module.exports = {
     swaggerUi,

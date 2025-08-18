@@ -15,7 +15,8 @@ COPY package*.json ./
 
 # Install dependencies
 RUN npm ci --only=production && npm cache clean --force
-RUN  npm install swagger-jsdoc swagger-ui-express
+RUN npm install swagger-jsdoc@6.2.8 swagger-ui-express@5.0.0 --save
+
 # Copy application code
 COPY . .
 
