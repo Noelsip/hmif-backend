@@ -14,87 +14,139 @@ WORKDIR /usr/app
 COPY package*.json ./
 
 # Install dependencies
-RUN echo "📦 Installing dependencies..." && \
-    npm ci && \
-    npm cache clean --force && \
-    echo "✅ Dependencies installed successfully"
+RUN npm ci --only=production && npm cache clean --force
 
-# Copy source code
+# Copy application code
 COPY . .
 
 # Generate Prisma client
-RUN if [ -f "prisma/schema.prisma" ]; then \
-        echo "🔧 Generating Prisma client..." && \
-        npx prisma generate; \
-    fi
+RUN npx prisma generate
 
-# Create directories
+# Create required directories
 RUN mkdir -p logs ssl && chmod 755 logs ssl
 
-# ✅ Enhanced startup script dengan proper database migration
+# ✅ Enhanced startup script dengan better error handling
 RUN cat > /usr/app/startup.sh << 'EOF'
 #!/bin/bash
 set -e
 
-echo "🚀 Starting HMIF Backend..."
+echo "🚀 HMIF Backend Startup Script"
+echo "=============================="
 
-# Wait for database to be ready
-echo "⏳ Waiting for database connection..."
-max_attempts=60
-attempt=1
-
-while [ $attempt -le $max_attempts ]; do
-    echo "🔍 Testing database connection (attempt $attempt/$max_attempts)..."
+# Function to check MySQL connectivity
+check_mysql() {
+    local attempt=1
+    local max_attempts=30
     
-    if mysqladmin ping -h mysql -u root -prootpassword 2>/dev/null; then
-        echo "✅ Database server is ready!"
-        break
-    else
-        echo "⏳ Database not ready, waiting 2 seconds..."
-        sleep 2
-        attempt=$((attempt + 1))
+    echo "⏳ Checking MySQL connection..."
+    while [ $attempt -le $max_attempts ]; do
+        if mysqladmin ping -h mysql -u root -prootpassword --silent 2>/dev/null; then
+            echo "✅ MySQL is ready (attempt $attempt)"
+            return 0
+        else
+            echo "⏳ MySQL not ready, attempt $attempt/$max_attempts"
+            sleep 3
+            attempt=$((attempt + 1))
+        fi
+    done
+    
+    echo "❌ MySQL connection failed after $max_attempts attempts"
+    return 1
+}
+
+# Function to ensure database exists
+ensure_database() {
+    echo "🔧 Ensuring database exists..."
+    
+    # Try to create database if it doesn't exist
+    mysql -h mysql -u root -prootpassword -e "
+        CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+        SHOW DATABASES LIKE 'hmif_app';
+    " 2>/dev/null || {
+        echo "❌ Failed to create database"
+        return 1
+    }
+    
+    echo "✅ Database hmif_app is ready"
+    return 0
+}
+
+# Function to run database migration
+run_migration() {
+    echo "🔄 Running database migration..."
+    
+    # Generate Prisma client first
+    npx prisma generate
+    
+    # Try db push first (for development/quick setup)
+    if npx prisma db push --accept-data-loss --skip-generate; then
+        echo "✅ Database schema synchronized with db push"
+        return 0
     fi
     
-    if [ $attempt -gt $max_attempts ]; then
-        echo "❌ Database connection timeout after $max_attempts attempts"
+    # If db push fails, try migrate deploy
+    echo "⚠️  DB push failed, trying migrate deploy..."
+    if npx prisma migrate deploy; then
+        echo "✅ Migration deployed successfully"
+        return 0
+    fi
+    
+    echo "❌ All migration attempts failed"
+    return 1
+}
+
+# Function to verify database tables
+verify_tables() {
+    echo "🔍 Verifying database tables..."
+    
+    local table_count=$(mysql -h mysql -u root -prootpassword hmif_app -e "
+        SELECT COUNT(*) as count 
+        FROM information_schema.tables 
+        WHERE table_schema = 'hmif_app';
+    " -s -N 2>/dev/null)
+    
+    if [ "$table_count" -gt 0 ]; then
+        echo "✅ Found $table_count tables in database"
+        mysql -h mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null | head -10
+        return 0
+    else
+        echo "❌ No tables found in database"
+        return 1
+    fi
+}
+
+# Main startup sequence
+main() {
+    echo "Starting main startup sequence..."
+    
+    # Step 1: Check MySQL connection
+    if ! check_mysql; then
+        echo "❌ Startup failed: MySQL connection timeout"
         exit 1
     fi
-done
+    
+    # Step 2: Ensure database exists
+    if ! ensure_database; then
+        echo "❌ Startup failed: Database creation failed"
+        exit 1
+    fi
+    
+    # Step 3: Run migration
+    if ! run_migration; then
+        echo "⚠️  Migration failed, but continuing..."
+        # Don't exit here, try to start the app anyway
+    fi
+    
+    # Step 4: Verify tables (optional)
+    verify_tables || echo "⚠️  Table verification failed"
+    
+    # Step 5: Start the application
+    echo "🚀 Starting Node.js application..."
+    exec node app.js
+}
 
-# Ensure database exists
-echo "🔧 Ensuring database exists..."
-mysql -h mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null || echo "Database already exists"
-
-# Run database migration/push
-echo "🔄 Running database migration..."
-if npx prisma db push --accept-data-loss --force-reset; then
-    echo "✅ Database schema synchronized successfully"
-elif npx prisma migrate deploy; then
-    echo "✅ Migration deployed successfully"
-else
-    echo "⚠️  Migration failed, trying to create tables manually..."
-    # Generate Prisma client just in case
-    npx prisma generate
-fi
-
-# Verify tables exist
-echo "🔍 Verifying database tables..."
-TABLES=$(mysql -h mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null | wc -l)
-if [ $TABLES -gt 1 ]; then
-    echo "✅ Database tables created ($((TABLES-1)) tables found)"
-    mysql -h mysql -u root -prootpassword hmif_app -e "SHOW TABLES;" 2>/dev/null || true
-else
-    echo "❌ No tables found in database!"
-    echo "🔄 Trying emergency schema creation..."
-    npx prisma db push --accept-data-loss --force-reset || echo "Emergency push failed"
-fi
-
-# Final Prisma client generation
-echo "🔧 Final Prisma client generation..."
-npx prisma generate
-
-echo "🚀 Starting Node.js application..."
-exec npm start
+# Run main function
+main
 EOF
 
 # Make startup script executable
@@ -104,7 +156,7 @@ RUN chmod +x /usr/app/startup.sh
 EXPOSE 3000 3443
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=15s --start-period=90s --retries=5 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 
 # Use startup script

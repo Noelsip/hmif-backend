@@ -7,21 +7,28 @@ services:
       MYSQL_ROOT_HOST: '%'
       MYSQL_ROOT_PASSWORD: rootpassword
       MYSQL_DATABASE: hmif_app
-      MYSQL_ROOT_PASSWORD_FILE: ''
     ports:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./init-db.sql:/docker-entrypoint-initdb.d/01-init.sql
+      # ✅ Perbaiki path dan pastikan file exists
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
       - hmif-network
-    command: --bind-address=0.0.0.0 --default-authentication-plugin=mysql_native_password --innodb-buffer-pool-size=256M
+    # ✅ Perbaiki MySQL command dengan parameter yang benar
+    command: >
+      --bind-address=0.0.0.0 
+      --authentication_policy=mysql_native_password 
+      --innodb-buffer-pool-size=256M
+      --max_connections=200
+      --character-set-server=utf8mb4 
+      --collation-server=utf8mb4_unicode_ci
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-prootpassword"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-      start_period: 30s
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
 
   redis:
     image: redis:7-alpine
@@ -33,7 +40,15 @@ services:
       - redis_data:/data
     networks:
       - hmif-network
-    command: redis-server --appendonly yes --bind 0.0.0.0
+    # ✅ Add sysctl untuk fix memory overcommit warning
+    sysctls:
+      - net.core.somaxconn=1024
+    command: >
+      redis-server 
+      --appendonly yes 
+      --bind 0.0.0.0 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -61,14 +76,16 @@ services:
       - ./ssl:/usr/app/ssl
     networks:
       - hmif-network
+    # ✅ Add environment variables untuk debugging
+    environment:
+      - DEBUG=prisma:*
+      - NODE_OPTIONS=--max-old-space-size=1024
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
       interval: 30s
       timeout: 15s
       retries: 5
       start_period: 120s
-    environment:
-      - WAIT_FOR_IT=mysql:3306
 
 networks:
   hmif-network:
@@ -80,4 +97,6 @@ networks:
 
 volumes:
   mysql_data:
+    driver: local
   redis_data:
+    driver: local
