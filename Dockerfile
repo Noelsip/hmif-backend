@@ -1,12 +1,14 @@
 FROM node:18-alpine
 
-# Install system dependencies including MySQL client
+# Install system dependencies with proper MySQL client (not MariaDB)
 RUN apk add --no-cache \
     bash \
     curl \
     netcat-openbsd \
-    mysql-client \
     dos2unix
+
+# Install Oracle MySQL client instead of MariaDB
+RUN apk add --no-cache mysql-client --repository=http://dl-cdn.alpinelinux.org/alpine/edge/main
 
 WORKDIR /usr/app
 
@@ -25,20 +27,20 @@ RUN npx prisma generate
 # Create required directories
 RUN mkdir -p logs ssl && chmod 755 logs ssl
 
-# ✅ Enhanced startup script with SSL-disabled MySQL connection
+# ✅ Fixed startup script with MariaDB-compatible MySQL client commands
 RUN cat > /usr/app/startup.sh << 'EOF'
 #!/bin/bash
 set -e
 
-echo "🚀 HMIF Backend Startup Script (SSL Fixed)"
-echo "=========================================="
+echo "🚀 HMIF Backend Startup Script (MariaDB Client Compatible)"
+echo "========================================================="
 
-# Enhanced MySQL connection testing with SSL disabled
+# Enhanced MySQL connection testing with MariaDB client compatibility
 check_mysql() {
     local attempt=1
     local max_attempts=60
     
-    echo "🔍 Testing MySQL connection with SSL disabled..."
+    echo "🔍 Testing MySQL connection with MariaDB client compatibility..."
     
     while [ $attempt -le $max_attempts ]; do
         echo "🔍 Testing MySQL connection (attempt $attempt/$max_attempts)..."
@@ -47,15 +49,21 @@ check_mysql() {
         if nc -z mysql 3306; then
             echo "   ✅ Network connection to mysql:3306 successful"
             
-            # Test MySQL authentication with SSL disabled
-            if mysql -h mysql -u root -prootpassword --ssl-mode=DISABLED -e "SELECT 1;" 2>/dev/null; then
-                echo "   ✅ MySQL authentication successful (SSL disabled)!"
+            # Test MySQL authentication with MariaDB client (no --ssl-mode parameter)
+            if mysql -h mysql -u root -prootpassword --skip-ssl-verify -e "SELECT 1;" 2>/dev/null; then
+                echo "   ✅ MySQL authentication successful (SSL skipped)!"
+                return 0
+            elif mysql -h mysql -u root -prootpassword -e "SELECT 1;" 2>/dev/null; then
+                echo "   ✅ MySQL authentication successful!"
                 return 0
             else
                 echo "   ❌ MySQL authentication failed (credentials issue)"
                 echo "   🔍 Debugging MySQL connection..."
                 echo "   Database URL: $(echo $DATABASE_URL | sed 's/:[^:@]*@/:***@/')"
-                mysql -h mysql -u root -prootpassword --ssl-mode=DISABLED -e "SELECT 1;" 2>&1 | head -3 || true
+                
+                # Try different connection methods for MariaDB client
+                echo "   Trying connection without SSL parameters..."
+                mysql -h mysql -u root -prootpassword -e "SELECT 1;" 2>&1 | head -3 || true
                 echo "   MySQL error details printed above"
             fi
         else
@@ -70,10 +78,10 @@ check_mysql() {
     return 1
 }
 
-# Function to ensure database exists with SSL disabled
+# Function to ensure database exists (MariaDB client compatible)
 ensure_database() {
     echo "🔧 Ensuring database exists..."
-    mysql -h mysql -u root -prootpassword --ssl-mode=DISABLED << SQL
+    mysql -h mysql -u root -prootpassword << 'SQL'
 CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE hmif_app;
 SELECT 'Database hmif_app is ready' as status;

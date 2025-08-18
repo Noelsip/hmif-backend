@@ -128,6 +128,11 @@ EOF
 
 echo "✅ .env.docker created with SSL-disabled MySQL connection"
 
+# Build Docker images
+echo "🔨 Building Docker images..."
+docker compose build --no-cache --pull
+
+
 echo "🔧 Ensuring vm.overcommit_memory=1 on host (required by Redis)"
 if sysctl -n vm.overcommit_memory 2>/dev/null | grep -q '^1$'; then
   echo "✅ vm.overcommit_memory already = 1"
@@ -142,11 +147,6 @@ else
     echo "⚠️ Cannot persist to /etc/sysctl.conf automatically (permission denied)"
   fi
 fi
-
-# Build Docker images
-echo "🔨 Building Docker images..."
-docker compose build --no-cache --pull
-
 # Start MySQL first with enhanced monitoring
 echo "🔧 Starting MySQL service with SSL disabled..."
 docker compose up -d mysql
