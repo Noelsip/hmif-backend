@@ -3,12 +3,10 @@ name: Deploy to VPS
 on:
   push:
     branches: ["main"]
-  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
 
     steps:
       - name: 🚀 Deploy to VPS via SSH
@@ -19,71 +17,12 @@ jobs:
           key: ${{ secrets.VPS_KEY }}
           port: 22
           timeout: 60s
-          command_timeout: 15m
+          command_timeout: 10m
           script: |
-            set -e
-            echo "🔄 Starting deployment process..."
-            
-            # Navigate to project directory
             cd ${{ secrets.VPS_PATH }}
-            
-            # Show current status
-            echo "📍 Current directory: $(pwd)"
-            echo "🌿 Current branch: $(git branch --show-current)"
-            echo "📝 Last commit: $(git log -1 --oneline)"
-            
-            # Stash any local changes
-            git stash -u 2>/dev/null || true
-            
-            # Pull latest changes
-            echo "📥 Pulling latest changes..."
-            git fetch origin
-            git reset --hard origin/main
-            
-            # ✅ CREATE .env.production.local if not exists
-            if [ ! -f ".env.production.local" ]; then
-                echo "📝 Creating .env.production.local..."
-                cat > .env.production.local << 'EOF'
-            DUCKDNS_DOMAIN=${{ secrets.DUCKDNS_DOMAIN }}
-            GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            REFRESH_TOKEN_SECRET=${{ secrets.REFRESH_TOKEN_SECRET }}
-            SESSION_SECRET=${{ secrets.SESSION_SECRET }}
-            IMAGEKIT_PUBLIC_KEY=${{ secrets.IMAGEKIT_PUBLIC_KEY }}
-            IMAGEKIT_PRIVATE_KEY=${{ secrets.IMAGEKIT_PRIVATE_KEY }}
-            IMAGEKIT_URL_ENDPOINT=${{ secrets.IMAGEKIT_URL_ENDPOINT }}
-            ADMIN_EMAILS=${{ secrets.ADMIN_EMAILS }}
-            EOF
-                echo "✅ .env.production.local created"
-            else
-                echo "✅ .env.production.local already exists"
-            fi
-            
-            # Make deploy script executable
+            # Reset local changes and force pull
+            git stash
+            git reset --hard HEAD
+            git pull origin main
             chmod +x auto-deploy.sh
-            
-            # Run deployment
-            echo "🚀 Running auto-deploy script..."
             ./auto-deploy.sh
-            
-            echo "✅ Deployment completed successfully!"
-
-      - name: 🏥 Health Check
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_KEY }}
-          port: 22
-          timeout: 30s
-          script: |
-            sleep 10
-            if curl -f -s http://localhost:3000/health > /dev/null; then
-              echo "✅ Health check passed!"
-            else
-              echo "❌ Health check failed!"
-              cd ${{ secrets.VPS_PATH }}
-              docker compose logs --tail 20 app
-              exit 1
-            fi

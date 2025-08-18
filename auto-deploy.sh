@@ -4,32 +4,60 @@ set -e
 echo "🚀 HMIF Backend Auto Deploy with DuckDNS"
 echo "════════════════════════════════════════"
 
-# Load production credentials
+# ✅ Create .env.production.local if not exists dengan PLACEHOLDER values
 if [ ! -f ".env.production.local" ]; then
-    echo "❌ .env.production.local tidak ditemukan!"
-    echo "💡 Silakan buat file .env.production.local dengan konfigurasi DuckDNS"
-    echo "💡 Contoh: DUCKDNS_DOMAIN=hmif-backend.duckdns.org"
+    echo "📝 .env.production.local tidak ditemukan, membuat template..."
+    cat > .env.production.local << 'EOF'
+# GANTI NILAI-NILAI BERIKUT DENGAN YANG SEBENARNYA!
+DUCKDNS_DOMAIN=your-domain.duckdns.org
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+JWT_SECRET=your-jwt-secret-minimum-32-characters
+REFRESH_TOKEN_SECRET=your-refresh-token-secret-minimum-32-characters
+SESSION_SECRET=your-session-secret-minimum-32-characters
+IMAGEKIT_PUBLIC_KEY=your-imagekit-public-key
+IMAGEKIT_PRIVATE_KEY=your-imagekit-private-key
+IMAGEKIT_URL_ENDPOINT=your-imagekit-endpoint
+ADMIN_EMAILS=admin@example.com
+EOF
+    echo "❌ .env.production.local template created!"
+    echo "💡 EDIT FILE INI DENGAN CREDENTIALS YANG BENAR SEBELUM DEPLOY!"
+    echo "💡 File location: $(pwd)/.env.production.local"
     exit 1
 fi
 
+# Load production credentials
+echo "📥 Loading production credentials..."
 source .env.production.local
 
 # Validate DuckDNS domain
-if [ -z "$DUCKDNS_DOMAIN" ]; then
-    echo "❌ DUCKDNS_DOMAIN tidak ditemukan!"
-    echo "💡 Tambahkan DUCKDNS_DOMAIN=yourdomain.duckdns.org ke .env.production.local"
+if [ -z "$DUCKDNS_DOMAIN" ] || [ "$DUCKDNS_DOMAIN" == "your-domain.duckdns.org" ]; then
+    echo "❌ DUCKDNS_DOMAIN belum dikonfigurasi!"
+    echo "💡 Edit .env.production.local dan ganti DUCKDNS_DOMAIN dengan domain Anda"
     exit 1
 fi
 
 # Validate Google OAuth credentials
-if [ -z "$GOOGLE_CLIENT_ID" ] || [ -z "$GOOGLE_CLIENT_SECRET" ]; then
-    echo "❌ Google OAuth credentials tidak lengkap!"
-    echo "💡 Pastikan GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET ada di .env.production.local"
+if [ -z "$GOOGLE_CLIENT_ID" ] || [ "$GOOGLE_CLIENT_ID" == "your-google-client-id" ]; then
+    echo "❌ GOOGLE_CLIENT_ID belum dikonfigurasi!"
+    echo "💡 Edit .env.production.local dengan Google OAuth credentials yang benar"
+    exit 1
+fi
+
+if [ -z "$GOOGLE_CLIENT_SECRET" ] || [ "$GOOGLE_CLIENT_SECRET" == "your-google-client-secret" ]; then
+    echo "❌ GOOGLE_CLIENT_SECRET belum dikonfigurasi!"
+    echo "💡 Edit .env.production.local dengan Google OAuth credentials yang benar"
     exit 1
 fi
 
 echo "🌐 DuckDNS Domain: $DUCKDNS_DOMAIN"
 echo "🔐 Google OAuth Client ID: ${GOOGLE_CLIENT_ID:0:20}..."
+
+# Validate JWT secrets
+if [ -z "$JWT_SECRET" ] || [ "$JWT_SECRET" == "your-jwt-secret-minimum-32-characters" ]; then
+    echo "❌ JWT_SECRET belum dikonfigurasi!"
+    exit 1
+fi
 
 # Docker cleanup
 echo "🧹 Cleaning up containers..."
@@ -82,7 +110,7 @@ FRONTEND_URL=https://${DUCKDNS_DOMAIN}:3443
 DATABASE_URL=mysql://root:rootpassword@mysql:3306/hmif_app
 REDIS_URL=redis://redis:6379
 
-# Google OAuth dengan DuckDNS - FIXED CALLBACK URL
+# Google OAuth dengan DuckDNS
 GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
 GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
 GOOGLE_CALLBACK_URL=https://${DUCKDNS_DOMAIN}:3443/auth/google/callback
