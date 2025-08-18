@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-echo "🚀 HMIF Backend Auto Deploy with DuckDNS"
-echo "════════════════════════════════════════"
+echo "🚀 HMIF Backend Auto Deploy with DuckDNS (MySQL Fixed)"
+echo "═══════════════════════════════════════════════════════"
 
 # Load production credentials
 if [ ! -f ".env.production.local" ]; then
@@ -32,16 +32,18 @@ EOF
 dos2unix init-db.sql 2>/dev/null || sed -i 's/\r$//' init-db.sql
 chmod 644 init-db.sql
 
-# Enhanced Docker cleanup
+# Enhanced Docker cleanup with force stop
 echo "🧹 Comprehensive Docker cleanup..."
-docker compose down --volumes --remove-orphans 2>/dev/null || true
+docker compose down --volumes --remove-orphans --timeout 30 2>/dev/null || true
+docker stop $(docker ps -q) 2>/dev/null || true
 docker container prune -f
 docker volume prune -f
 docker network prune -f
 docker system prune -f
 
-# Remove specific MySQL volumes if exist
-docker volume rm $(docker volume ls -q | grep -E "(mysql|hmif)") 2>/dev/null || true
+# Remove specific volumes if exist
+echo "🗑️ Removing specific MySQL and Redis volumes..."
+docker volume rm $(docker volume ls -q | grep -E "(mysql|hmif|redis)") 2>/dev/null || true
 
 # Generate SSL certificates
 echo "🔐 Generating SSL certificates for DuckDNS..."
@@ -91,7 +93,7 @@ else
 fi
 
 # Create .env.docker with explicit configurations
-echo "📝 Creating Docker environment with explicit database credentials..."
+echo "📝 Creating Docker environment file..."
 cat > .env.docker << EOF
 PORT=3000
 NODE_ENV=production
@@ -122,62 +124,75 @@ ADMIN_EMAILS=${ADMIN_EMAILS}
 LOG_LEVEL=info
 EOF
 
-echo "✅ .env.docker created with explicit database credentials"
+echo "✅ .env.docker created successfully"
 
-# Build with no cache and detailed logging
-echo "🔨 Building Docker images with detailed logging..."
-docker compose build --no-cache --progress=plain 2>&1 | tee build.log
+# Build Docker images with clean slate
+echo "🔨 Building Docker images..."
+docker compose build --no-cache --pull
 
-# Start services step by step with enhanced monitoring
-echo "🚀 Starting services with enhanced monitoring..."
-
-# Start MySQL first and wait for it to be ready
-echo "🔧 Starting MySQL service..."
+# Start MySQL first and wait for it to be completely ready
+echo "🔧 Starting MySQL service (with MySQL 5.7/8.0 compatibility fix)..."
 docker compose up -d mysql
-sleep 20
 
-# Enhanced MySQL health monitoring
-echo "🔍 Monitoring MySQL startup with detailed logging..."
+# Enhanced MySQL monitoring with better error detection
+echo "🔍 Monitoring MySQL startup (enhanced monitoring)..."
+mysql_ready=false
 for i in {1..30}; do
     echo "⏳ MySQL startup check $i/30..."
     
     # Check if container is running
     if ! docker compose ps mysql | grep -q "Up"; then
-        echo "❌ MySQL container is not running!"
-        echo "📋 MySQL container status:"
-        docker compose ps mysql
-        echo "📋 MySQL logs (last 50 lines):"
-        docker compose logs mysql --tail 50
+        echo "❌ MySQL container stopped! Checking logs..."
+        docker compose logs mysql --tail 20
+        
+        # Check for specific errors
+        if docker compose logs mysql 2>&1 | grep -q "sql_mode"; then
+            echo "🚨 DETECTED SQL_MODE ERROR - MySQL version compatibility issue!"
+            echo "💡 Recommendation: Switch to MySQL 5.7 or fix sql_mode in docker-compose.yml"
+        fi
+        
+        if docker compose logs mysql 2>&1 | grep -q "NO_AUTO_CREATE_USER"; then
+            echo "🚨 NO_AUTO_CREATE_USER not supported in MySQL 8.0!"
+            echo "💡 Please use the fixed docker-compose.yml provided above"
+        fi
         
         if [ $i -eq 30 ]; then
             exit 1
         fi
         
-        sleep 10
+        echo "🔄 Restarting MySQL..."
+        docker compose restart mysql
+        sleep 15
         continue
     fi
     
-    # Check if MySQL is accepting connections
+    # Test MySQL connection
     if docker compose exec mysql mysqladmin ping -u root -prootpassword --silent 2>/dev/null; then
         echo "✅ MySQL is ready and accepting connections!"
         
-        # Verify database exists
+        # Verify database creation
         if docker compose exec mysql mysql -u root -prootpassword -e "SHOW DATABASES LIKE 'hmif_app';" 2>/dev/null | grep -q hmif_app; then
-            echo "✅ Database 'hmif_app' exists and is accessible"
+            echo "✅ Database 'hmif_app' exists and accessible"
+            mysql_ready=true
             break
         else
-            echo "🔧 Creating database 'hmif_app'..."
-            docker compose exec mysql mysql -u root -prootpassword -e "CREATE DATABASE IF NOT EXISTS hmif_app CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null
+            echo "🔧 Database 'hmif_app' not found, should be created by init script..."
         fi
     else
         echo "⏳ MySQL not ready yet, waiting... (attempt $i/30)"
         
+        if [ $((i % 5)) -eq 0 ]; then
+            echo "📋 MySQL logs (last 10 lines):"
+            docker compose logs mysql --tail 10
+        fi
+        
         if [ $i -eq 30 ]; then
             echo "❌ MySQL failed to start after 30 attempts!"
-            echo "📋 Final MySQL logs:"
-            docker compose logs mysql --tail 100
-            echo "📋 MySQL container inspect:"
-            docker inspect hmif-mysql | grep -A 10 -B 5 "Health"
+            echo "📋 Complete MySQL logs:"
+            docker compose logs mysql --tail 50
+            echo "📋 MySQL container details:"
+            docker compose ps mysql
+            docker inspect hmif-mysql | grep -A 10 -B 5 "Health" || true
             exit 1
         fi
         
@@ -185,19 +200,26 @@ for i in {1..30}; do
     fi
 done
 
+if [ "$mysql_ready" = false ]; then
+    echo "❌ MySQL failed to become ready!"
+    exit 1
+fi
+
 # Start Redis
 echo "🔧 Starting Redis service..."
 docker compose up -d redis
 sleep 10
 
-# Verify Redis is ready
+# Verify Redis
+echo "🔍 Verifying Redis..."
+redis_ready=false
 for i in {1..10}; do
     if docker compose exec redis redis-cli ping 2>/dev/null | grep -q PONG; then
         echo "✅ Redis is ready!"
+        redis_ready=true
         break
     else
         echo "⏳ Waiting for Redis... (attempt $i/10)"
-        sleep 5
         
         if [ $i -eq 10 ]; then
             echo "❌ Redis failed to start!"
@@ -205,27 +227,33 @@ for i in {1..10}; do
             docker compose logs redis --tail 20
             exit 1
         fi
+        
+        sleep 5
     fi
 done
+
+if [ "$redis_ready" = false ]; then
+    echo "❌ Redis failed to become ready!"
+    exit 1
+fi
 
 # Start application
 echo "🔧 Starting application service..."
 docker compose up -d app
 
-# Enhanced application health monitoring
+# Monitor application startup
 echo "🔍 Monitoring application startup..."
-for i in {1..40}; do
-    echo "⏳ App health check $i/40..."
+app_ready=false
+for i in {1..24}; do
+    echo "⏳ App health check $i/24..."
     
-    # Check if container is running
+    # Check container status
     if ! docker compose ps app | grep -q "Up"; then
-        echo "❌ App container is not running!"
-        echo "📋 App container status:"
-        docker compose ps app
-        echo "📋 App logs (last 30 lines):"
-        docker compose logs app --tail 30
+        echo "❌ App container not running!"
+        echo "📋 App logs (last 20 lines):"
+        docker compose logs app --tail 20
         
-        if [ $i -eq 40 ]; then
+        if [ $i -eq 24 ]; then
             exit 1
         fi
         
@@ -233,22 +261,26 @@ for i in {1..40}; do
         continue
     fi
     
-    # Check application health endpoint
-    if curl -f -s http://localhost:3000/health > /dev/null; then
+    # Health endpoint check
+    if curl -f -s http://localhost:3000/health > /dev/null 2>&1; then
         echo "✅ Application health check passed!"
+        app_ready=true
         break
-    elif [ $i -eq 40 ]; then
-        echo "❌ Application health check failed after 40 attempts!"
-        echo "📋 Final app logs:"
+    elif [ $i -eq 24 ]; then
+        echo "❌ Application health check failed after 24 attempts!"
+        echo "📋 Complete app logs:"
         docker compose logs app --tail 100
-        echo "📋 App container inspect:"
-        docker inspect hmif-app | grep -A 5 -B 5 "Health"
         exit 1
     else
-        echo "⏳ App not ready yet, waiting... (attempt $i/40)"
+        echo "⏳ App not ready yet, waiting... (attempt $i/24)"
         sleep 15
     fi
 done
+
+if [ "$app_ready" = false ]; then
+    echo "❌ Application failed to become ready!"
+    exit 1
+fi
 
 echo ""
 echo "🎉 Deploy berhasil!"
@@ -263,5 +295,5 @@ echo ""
 echo "📊 Final status:"
 docker compose ps
 echo ""
-echo "🔍 Quick verification:"
+echo "🔍 Final verification:"
 curl -s http://localhost:3000/health | head -3 || echo "Health check endpoint not responding"
