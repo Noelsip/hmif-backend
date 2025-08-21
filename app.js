@@ -322,6 +322,38 @@ try {
     console.error('❌ Failed to load auth routes:', error.message);
 }
 
+try {
+    const newsRoutes = require('./routes/news');
+    app.use('/news', newsRoutes);
+    console.log('✅ News routes loaded');
+} catch (error) {
+    console.error('❌ Failed to load news routes:', error.message);
+}
+
+try {
+    const subjectRoutes = require('./routes/subject');
+    app.use('/subject', subjectRoutes);
+    console.log('✅ Subject routes loaded');
+} catch (error) {
+    console.error('❌ Failed to load subject routes:', error.message);
+}
+
+try {
+    const uploadRoutes = require('./routes/upload');
+    app.use('/upload', uploadRoutes);
+    console.log('✅ Upload routes loaded');
+} catch (error) {
+    console.error('❌ Failed to load upload routes:', error.message);
+}
+
+try {
+    const videosRoutes = require('./routes/videos');
+    app.use('/videos', videosRoutes);
+    console.log('✅ Videos routes loaded');
+} catch (error) {
+    console.error('❌ Failed to load videos routes:', error.message);
+}
+
 // Swagger documentation
 if (swaggerUi && swaggerSpec) {
     try {
